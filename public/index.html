@@ -459,6 +459,10 @@
     }
   }
 
+  // A cold container takes a few seconds to start; a request still open
+  // after this long is dropped so the page does not stay locked.
+  const RUN_TIMEOUT_MS = 60000;
+
   async function run() {
     if (busy) return;
     setBusy(true);
@@ -469,8 +473,21 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inputs()),
+        signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
       });
-      const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      const text = await res.text();
+      let body = null;
+      try {
+        body = JSON.parse(text);
+      } catch {}
+      if (!body) {
+        // Not an answer from pista: the platform failed on the way there.
+        const reason = text.trim() || res.statusText;
+        const hint = /try again/i.test(reason) ? "" : "\nTry again.";
+        render(`HTTP ${res.status}: ${reason}${hint}`, true);
+        status.textContent = "Failed";
+        return;
+      }
       if (body.error) {
         render(body.error, true);
       } else {
@@ -478,12 +495,14 @@
       }
       status.textContent = `Done in ${Math.round(performance.now() - started)} ms`;
     } catch (e) {
-      render(String(e), true);
-      status.textContent = "";
+      const timedOut = e.name === "TimeoutError";
+      render(timedOut ? `No answer after ${RUN_TIMEOUT_MS / 1000} s. Try again.` : String(e), true);
+      status.textContent = "Failed";
     } finally {
       setBusy(false);
     }
   }
+
 
   runButton.addEventListener("click", run);
   // Copying desired into current stands in for applying the diff.

@@ -90,6 +90,34 @@ async function readShare(id: string, env: Env): Promise<Response> {
   });
 }
 
+// Wait before each retry. An instance that just died can fail to start
+// again at once, so the retries are spaced out rather than immediate.
+const RETRY_DELAYS_MS = [500, 1500];
+
+// The server in the container answers every request with 200 or 400, pista
+// errors included, so a 5xx comes from the container layer: an instance that
+// failed to start or dropped the connection. Every request is independent
+// (pista diff reads no database), so it is sent again, to a random instance,
+// with the same body.
+async function forwardToContainer(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const body = hasBody ? await request.arrayBuffer() : null;
+  for (let attempt = 0; ; attempt++) {
+    const container = await getRandom(env.PISTA, INSTANCES);
+    const res = await container.fetch(new Request(request, { body }));
+    if (res.status < 500 || attempt === RETRY_DELAYS_MS.length) return res;
+    console.warn(
+      `container answered ${res.status} (attempt ${attempt + 1}): ${await res.clone().text()}`,
+    );
+    await new Promise((resolve) =>
+      setTimeout(resolve, RETRY_DELAYS_MS[attempt]),
+    );
+  }
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
@@ -102,10 +130,7 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/")) {
-      // Every request is independent (pista diff reads no database), so
-      // any instance can serve it.
-      const container = await getRandom(env.PISTA, INSTANCES);
-      return container.fetch(request);
+      return forwardToContainer(request, env);
     }
 
     // A share link is the page itself; the page loads the share by its ID.
