@@ -1,8 +1,3 @@
--- ============================================================
---  pistachio demo: blog/CMS schema (desired state)
---  Edit this file freely, then run pista diff (Ctrl+Enter).
--- ============================================================
-
 -- Added 'pinned' to the enum
 CREATE TYPE post_status AS ENUM ('draft', 'published', 'archived', 'pinned');
 

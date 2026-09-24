@@ -1,8 +1,3 @@
--- ============================================================
---  pistachio demo: blog/CMS schema (current state)
---  Stands in for the database: pista diff reads it as the current schema.
--- ============================================================
-
 -- Enum: post status
 CREATE TYPE post_status AS ENUM ('draft', 'published', 'archived');
 
