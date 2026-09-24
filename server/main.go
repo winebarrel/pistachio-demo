@@ -36,6 +36,7 @@ type diffRequest struct {
 	AllowDrop     []string `json:"allow_drop"`
 	ManageRoutine bool     `json:"manage_routine"`
 	BulkAlter     bool     `json:"bulk_alter"`
+	Explain       bool     `json:"explain"`
 }
 
 type diffResponse struct {
@@ -171,6 +172,9 @@ func runDiff(ctx context.Context, pista string, req *diffRequest) (string, error
 		}
 		if req.BulkAlter {
 			args = append(args, "--bulk-alter")
+		}
+		if req.Explain {
+			args = append(args, "--explain")
 		}
 		args = append(args, "--", currentFile, desiredFile)
 

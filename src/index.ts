@@ -24,6 +24,7 @@ interface Share {
   allow_drop: string[];
   manage_routine: boolean;
   bulk_alter: boolean;
+  explain: boolean;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -45,6 +46,7 @@ function parseShare(body: unknown): Share | null {
     allow_drop: allowDrop,
     manage_routine: b.manage_routine === true,
     bulk_alter: b.bulk_alter === true,
+    explain: b.explain === true,
   };
 }
 
