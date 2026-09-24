@@ -157,7 +157,18 @@
   }
   button:disabled { opacity: 0.6; cursor: progress; }
   .hint { color: var(--muted); font-size: 12px; }
-  #status { color: var(--muted); font-size: 12px; margin-left: auto; }
+  /* The status sits in the output header so a longer message never wraps
+     the controls and pushes the output down. */
+  .output-header { display: flex; align-items: baseline; gap: 12px; }
+  #status {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 </style>
 </head>
 <body>
@@ -206,11 +217,10 @@
     </label>
     <button id="reset">Reset to sample</button>
     <span class="hint">Ctrl+Enter / Cmd+Enter runs the diff.</span>
-    <span id="status"></span>
   </div>
 
   <section class="panel">
-    <h2>Output</h2>
+    <h2 class="output-header">Output <span id="status"></span></h2>
     <pre id="output" class="cm-s-pista"></pre>
   </section>
 </main>
@@ -261,7 +271,7 @@
   async function run() {
     const id = ++latest;
     runButton.disabled = true;
-    status.textContent = "Running... (the first request may wait for the container to start)";
+    status.textContent = "Running... (the first run starts the container)";
     const started = performance.now();
     try {
       const allowDrop = $("allow-drop").value;
