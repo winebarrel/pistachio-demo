@@ -60,6 +60,16 @@ To deploy from your machine instead, run `npx wrangler login`, then:
 npm run deploy
 ```
 
+## Updating pista
+
+The `Update pista` workflow checks the pistachio releases every day. When a
+release is newer than `PISTA_VERSION` in `Dockerfile`, it opens a pull request
+that bumps it. It can also be run by hand from the Actions tab.
+
+The workflow uses `GITHUB_TOKEN`, and a pull request opened with it does not
+trigger CI. The workflow therefore starts CI on the new branch itself, with
+`workflow_dispatch`.
+
 ## API
 
 `POST /api/diff` takes
