@@ -71,6 +71,23 @@ The KV namespace is the `SHARES` binding in `wrangler.jsonc`. It has no `id`,
 so wrangler creates the namespace on the first deploy. For that, the API token
 also needs Workers KV Storage: Edit.
 
+## Star count
+
+The GitHub link in the header shows the star count of winebarrel/pistachio.
+The Worker reads it from the GitHub API at `GET /api/stars` and caches it for
+an hour. When the count cannot be read, the link shows without it.
+
+Without a token, GitHub allows 60 requests an hour per IP address, and
+Workers share their outgoing addresses, so the count may often be missing.
+Set a token as a Worker secret to avoid that. A fine-grained personal access
+token with no permissions is enough, since it only reads a public repository:
+
+```sh
+npx wrangler secret put GITHUB_TOKEN
+```
+
+The secret stays across deploys, so this is needed once.
+
 ## Updating pista
 
 The `Update pista` workflow checks the pistachio releases every day. When a

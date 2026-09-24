@@ -118,12 +118,54 @@ async function forwardToContainer(
   }
 }
 
+// The repository the page links to, and how long its star count is cached.
+// The Worker fetches the count, not the page, and keeps it in the Cache API,
+// so GitHub sees about one request an hour per data center.
+const REPO = "winebarrel/pistachio";
+const STARS_TTL_SECONDS = 3600;
+const STARS_CACHE_KEY = `https://stars.cache.internal/${REPO}`;
+
+// GITHUB_TOKEN is an optional secret (wrangler secret put GITHUB_TOKEN).
+// Without it GitHub allows 60 requests an hour per IP address, and Workers
+// share their outgoing addresses, so the count may often be unavailable.
+async function stars(
+  env: Env & { GITHUB_TOKEN?: string },
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const cache = caches.default;
+  const cached = await cache.match(STARS_CACHE_KEY);
+  if (cached) return cached;
+
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "pistachio-demo",
+  };
+  if (env.GITHUB_TOKEN) headers.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
+  const res = await fetch(`https://api.github.com/repos/${REPO}`, { headers });
+  // A failure is not cached, so the next request tries GitHub again.
+  if (!res.ok) return json({ error: `GitHub answered ${res.status}` }, 502);
+  const repo = (await res.json()) as { stargazers_count?: unknown };
+  if (typeof repo.stargazers_count !== "number") {
+    return json({ error: "no star count" }, 502);
+  }
+
+  const answer = Response.json(
+    { stars: repo.stargazers_count },
+    { headers: { "Cache-Control": `public, max-age=${STARS_TTL_SECONDS}` } },
+  );
+  ctx.waitUntil(cache.put(STARS_CACHE_KEY, answer.clone()));
+  return answer;
+}
+
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/share" && request.method === "POST") {
       return createShare(request, env);
+    }
+    if (url.pathname === "/api/stars" && request.method === "GET") {
+      return stars(env, ctx);
     }
     if (url.pathname.startsWith("/api/share/") && request.method === "GET") {
       return readShare(url.pathname.slice("/api/share/".length), env);
