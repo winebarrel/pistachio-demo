@@ -184,6 +184,40 @@
     border-radius: 0 0 6px 6px;
   }
   #output.error { color: var(--error); }
+  /* Shown after Share: the link in full, with its own copy button. */
+  .share-result {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  }
+  .share-result[hidden] { display: none; }
+  .share-result label { font-weight: 600; }
+  .share-result input {
+    flex: 1 1 280px;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+    font: 13px var(--mono);
+  }
+  .copied {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--accent);
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .copied.show { opacity: 1; }
+  .copied svg { width: 16px; height: 16px; }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -283,6 +317,13 @@
     <span class="hint">Ctrl+Enter / Cmd+Enter runs the diff.</span>
   </div>
 
+  <div id="share-result" class="share-result" hidden>
+    <label for="share-url">Share link</label>
+    <input id="share-url" type="text" readonly>
+    <button id="copy-link">Copy</button>
+    <span id="copied" class="copied" role="status" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span id="copied-text"></span></span>
+  </div>
+
   <section class="panel">
     <h2 class="output-header">Output <span id="status"></span></h2>
     <pre id="output" class="cm-s-pista"></pre>
@@ -367,6 +408,29 @@
     $("bulk-alter").checked = s.bulk_alter;
   }
 
+  const shareUrl = $("share-url");
+  let copiedTimer;
+
+  // Copies the link and says so next to it for a few seconds. When the
+  // clipboard is not available, the link is selected for a manual copy.
+  async function copyLink() {
+    const copied = $("copied");
+    try {
+      await navigator.clipboard.writeText(shareUrl.value);
+      $("copied-text").textContent = "Copied to clipboard";
+    } catch {
+      shareUrl.select();
+      $("copied-text").textContent = "Press Ctrl+C / Cmd+C to copy";
+    }
+    copied.classList.add("show");
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => copied.classList.remove("show"), 3000);
+  }
+
+  function hideShare() {
+    $("share-result").hidden = true;
+  }
+
   async function share() {
     if (busy) return;
     const button = $("share");
@@ -382,14 +446,10 @@
         status.textContent = body.error;
         return;
       }
-      // The address bar now shows the link too, so the status stays short.
       history.replaceState(null, "", `/p/${body.id}`);
-      try {
-        await navigator.clipboard.writeText(location.href);
-        status.textContent = "Link copied";
-      } catch {
-        status.textContent = "Copy the link from the address bar";
-      }
+      shareUrl.value = location.href;
+      $("share-result").hidden = false;
+      await copyLink();
     } catch (e) {
       status.textContent = String(e);
     } finally {
@@ -435,7 +495,10 @@
   });
   $("share").addEventListener("click", share);
   // Empty against empty has no diff to show, so clearing does not run one.
+  $("copy-link").addEventListener("click", copyLink);
+  shareUrl.addEventListener("focus", () => shareUrl.select());
   $("clear").addEventListener("click", () => {
+    hideShare();
     history.replaceState(null, "", "/");
     current.setValue("");
     desired.setValue("");
@@ -444,6 +507,7 @@
     current.focus();
   });
   $("reset").addEventListener("click", async () => {
+    hideShare();
     history.replaceState(null, "", "/");
     await loadSample();
     run();
