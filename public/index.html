@@ -247,9 +247,52 @@
   .hint { color: var(--muted); font-size: 12px; }
   /* The status sits in the output header so a longer message never wraps
      the controls and pushes the output down. */
-  .output-header { display: flex; align-items: baseline; gap: 12px; }
-  #status {
+  .output-header { display: flex; align-items: center; gap: 12px; }
+  .run-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
     margin-left: auto;
+  }
+  /* Progress while a diff runs: a spinner by the status, and a bar sliding
+     across the top of the output. */
+  .spinner {
+    display: none;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  body.busy .spinner { display: inline-block; }
+  .progress {
+    height: 3px;
+    overflow: hidden;
+    visibility: hidden;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+  body.busy .progress { visibility: visible; }
+  .progress::before {
+    content: "";
+    display: block;
+    width: 30%;
+    height: 100%;
+    background: var(--accent);
+    animation: slide 1.2s ease-in-out infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slide {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(340%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner, .progress::before { animation: none; }
+    .progress::before { width: 100%; }
+  }
+  #status {
     color: var(--muted);
     font-size: 12px;
     font-weight: normal;
@@ -327,7 +370,8 @@
   </div>
 
   <section class="panel">
-    <h2 class="output-header">Output <span id="status"></span></h2>
+    <h2 class="output-header">Output <span class="run-state"><span class="spinner" aria-hidden="true"></span><span id="status"></span></span></h2>
+    <div class="progress" aria-hidden="true"></div>
     <pre id="output" class="cm-s-pista"></pre>
   </section>
 </main>
@@ -466,8 +510,15 @@
   async function run() {
     if (busy) return;
     setBusy(true);
-    status.textContent = "Running... (the first run starts the container)";
     const started = performance.now();
+    // The elapsed time ticks so a slow run, such as one that waits for a
+    // container to start, still visibly moves.
+    const tick = () => {
+      const seconds = Math.floor((performance.now() - started) / 1000);
+      status.textContent = `Running... ${seconds} s (the first run starts the container)`;
+    };
+    tick();
+    const ticker = setInterval(tick, 250);
     try {
       const res = await fetch("/api/diff", {
         method: "POST",
@@ -499,6 +550,7 @@
       render(timedOut ? `No answer after ${RUN_TIMEOUT_MS / 1000} s. Try again.` : String(e), true);
       status.textContent = "Failed";
     } finally {
+      clearInterval(ticker);
       setBusy(false);
     }
   }
