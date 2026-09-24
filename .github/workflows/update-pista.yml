@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -21,14 +22,9 @@ jobs:
   update:
     runs-on: ubuntu-latest
     env:
-      # A pull request opened with GITHUB_TOKEN does not start CI. Set
-      # PISTA_UPDATE_TOKEN to a token that can push and open pull requests on
-      # this repository so that CI runs on the pull request.
-      GH_TOKEN: ${{ secrets.PISTA_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          token: ${{ secrets.PISTA_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Open a pull request for a new pista release
         run: |
           latest=$(gh release view --repo winebarrel/pistachio --json tagName --jq .tagName)
@@ -60,3 +56,9 @@ jobs:
             --body "Updates pista from $current to $latest.
 
           Release notes: https://github.com/winebarrel/pistachio/releases/tag/v$latest"
+
+          # Neither the push nor the pull request above starts CI, because
+          # GITHUB_TOKEN made them. A workflow_dispatch event is the exception,
+          # and its checks land on the same commit, so the pull request shows
+          # them.
+          gh workflow run ci.yml --ref "$branch"

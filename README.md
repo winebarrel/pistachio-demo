@@ -66,9 +66,9 @@ The `Update pista` workflow checks the pistachio releases every day. When a
 release is newer than `PISTA_VERSION` in `Dockerfile`, it opens a pull request
 that bumps it. It can also be run by hand from the Actions tab.
 
-A pull request opened with the default `GITHUB_TOKEN` does not start CI. Set
-the `PISTA_UPDATE_TOKEN` secret to a token that can push and open pull requests
-on this repository, and CI runs on the pull request as usual.
+The workflow uses `GITHUB_TOKEN`, and a pull request opened with it does not
+trigger CI. The workflow therefore starts CI on the new branch itself, with
+`workflow_dispatch`.
 
 ## API
 
