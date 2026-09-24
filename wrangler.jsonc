@@ -5,10 +5,18 @@
   "compatibility_date": "2026-09-01",
   // The page and the sample schemas are static assets. A request that
   // matches no asset reaches the Worker, which forwards /api/* to the
-  // container.
+  // container and serves the page for a share link (/p/<id>).
   "assets": {
-    "directory": "./public"
+    "directory": "./public",
+    "binding": "ASSETS"
   },
+  // Shared schemas, keyed by share ID. With no id here, wrangler creates the
+  // namespace on the first deploy.
+  "kv_namespaces": [
+    {
+      "binding": "SHARES"
+    }
+  ],
   "containers": [
     {
       "class_name": "PistaContainer",
