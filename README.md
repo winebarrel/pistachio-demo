@@ -34,6 +34,17 @@ npm run dev
 
 The first request waits for the container to start.
 
+## Checks
+
+```sh
+npm run lint       # Biome
+npm run typecheck  # tsc
+npm run build      # bundle the Worker and build the container image, without deploying
+```
+
+The Go server is checked with golangci-lint, using `.golangci.yml` at the
+root. CI runs all of these on each pull request.
+
 ## Deploy
 
 ```sh
