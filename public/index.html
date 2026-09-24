@@ -10,7 +10,7 @@
 <meta property="og:title" content="pistachio playground">
 <meta property="og:description" content="Edit two PostgreSQL schemas and see the DDL pista diff generates. Nothing to install, no database needed.">
 <meta property="og:url" content="https://pistachio-demo.winebarrel.workers.dev/">
-<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png">
+<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=2">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The pistachio playground: two schema editors and the DDL pista diff generates">
@@ -100,11 +100,30 @@
   main { padding: 16px; display: grid; gap: 16px; }
   .editors {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 12px;
   }
+  .copy {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+  }
+  .copy button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+  }
+  .copy button:hover { border-color: var(--accent); color: var(--accent); }
+  .copy svg { width: 18px; height: 18px; }
   @media (max-width: 800px) {
-    .editors { grid-template-columns: 1fr; }
+    .editors { grid-template-columns: minmax(0, 1fr); }
+    /* Stacked editors: current above desired, so the arrows point down/up. */
+    .copy { flex-direction: row; }
+    .copy svg { transform: rotate(90deg); }
   }
   .panel {
     display: flex;
@@ -220,6 +239,10 @@
       <h2>current.sql <span>- what the database holds now</span></h2>
       <textarea id="current" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
     </section>
+    <div class="copy">
+      <button id="copy-to-desired" title="Copy current.sql to desired.sql" aria-label="Copy current.sql to desired.sql"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
+      <button id="copy-to-current" title="Copy desired.sql to current.sql, as if the diff had been applied" aria-label="Copy desired.sql to current.sql"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M11 6l-6 6 6 6"/></svg></button>
+    </div>
     <section class="panel">
       <h2>desired.sql <span>- what you want it to hold</span></h2>
       <textarea id="desired" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
@@ -338,6 +361,15 @@
   }
 
   runButton.addEventListener("click", run);
+  // Copying desired into current stands in for applying the diff.
+  $("copy-to-desired").addEventListener("click", () => {
+    desired.setValue(current.getValue());
+    run();
+  });
+  $("copy-to-current").addEventListener("click", () => {
+    current.setValue(desired.getValue());
+    run();
+  });
   $("reset").addEventListener("click", async () => {
     await loadSample();
     run();
