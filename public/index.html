@@ -173,7 +173,12 @@
   .cm-s-pista .cm-comment { color: var(--tok-comment); font-style: italic; }
   .cm-s-pista .cm-builtin { color: var(--tok-builtin); }
   .cm-s-pista .cm-operator { color: var(--tok-operator); }
+  /* While a diff runs, the old output is masked in grey and the inputs are
+     locked until the new one arrives. */
+  body.busy #output { opacity: 0.45; filter: grayscale(1); }
+  body.busy .CodeMirror { cursor: progress; }
   #output {
+    transition: opacity 0.15s;
     min-height: 120px;
     overflow: auto;
     border-radius: 0 0 6px 6px;
@@ -321,13 +326,22 @@
     CodeMirror.runMode(text, "text/x-pgsql", output);
   }
 
-  // Only the newest request may update the page: an older one that answers
-  // late must not overwrite its result.
-  let latest = 0;
+  // Everything a run reads from. Locking it keeps the result in step with
+  // the inputs, and one run at a time means no late answer can overwrite a
+  // newer one.
+  const controls = () => document.querySelectorAll("main button, main select, main input");
+  let busy = false;
+
+  function setBusy(on) {
+    busy = on;
+    document.body.classList.toggle("busy", on);
+    for (const cm of [current, desired]) cm.setOption("readOnly", on);
+    for (const el of controls()) el.disabled = on;
+  }
 
   async function run() {
-    const id = ++latest;
-    runButton.disabled = true;
+    if (busy) return;
+    setBusy(true);
     status.textContent = "Running... (the first run starts the container)";
     const started = performance.now();
     try {
@@ -344,7 +358,6 @@
         }),
       });
       const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      if (id !== latest) return;
       if (body.error) {
         render(body.error, true);
       } else {
@@ -352,11 +365,10 @@
       }
       status.textContent = `Done in ${Math.round(performance.now() - started)} ms`;
     } catch (e) {
-      if (id !== latest) return;
       render(String(e), true);
       status.textContent = "";
     } finally {
-      if (id === latest) runButton.disabled = false;
+      setBusy(false);
     }
   }
 
