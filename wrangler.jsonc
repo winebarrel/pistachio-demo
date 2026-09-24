@@ -1,7 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pistachio-demo",
-  "account_id": "0cbc56c1892c126e04af4f771484874f",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   // The page and the sample schemas are static assets. A request that

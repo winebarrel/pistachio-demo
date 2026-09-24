@@ -47,10 +47,12 @@ root. CI runs all of these on each pull request.
 
 ## Deploy
 
-CI deploys `main` once the checks pass, to the account `account_id` in
-`wrangler.jsonc` names. It reads one repository secret,
-`CLOUDFLARE_API_TOKEN`: an API token that can edit Workers scripts and
-Containers on that account.
+CI deploys `main` once the checks pass. It reads these from the repository
+settings:
+
+- `CLOUDFLARE_ACCOUNT_ID` (variable): the account to deploy to
+- `CLOUDFLARE_API_TOKEN` (secret): an API token that can edit Workers scripts
+  and Containers on that account
 
 To deploy from your machine instead, run `npx wrangler login`, then:
 
