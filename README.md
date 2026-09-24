@@ -60,6 +60,17 @@ To deploy from your machine instead, run `npx wrangler login`, then:
 npm run deploy
 ```
 
+## Share links
+
+The Share button saves both schemas and the options to Workers KV and copies
+a link of the form `/p/<id>`. The ID is the start of the SHA-256 of what was
+saved, so the same input always gets the same link. A share is kept with no
+expiry and can be up to 128 KiB.
+
+The KV namespace is the `SHARES` binding in `wrangler.jsonc`. It has no `id`,
+so wrangler creates the namespace on the first deploy. For that, the API token
+also needs Workers KV Storage: Edit.
+
 ## Updating pista
 
 The `Update pista` workflow checks the pistachio releases every day. When a

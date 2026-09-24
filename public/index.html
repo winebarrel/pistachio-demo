@@ -10,13 +10,13 @@
 <meta property="og:title" content="pistachio playground">
 <meta property="og:description" content="Edit two PostgreSQL schemas and see the DDL pista diff generates. Nothing to install, no database needed.">
 <meta property="og:url" content="https://pistachio-demo.winebarrel.workers.dev/">
-<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=2">
+<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=3">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The pistachio playground: two schema editors and the DDL pista diff generates">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="favicon.ico" sizes="32x32">
-<link rel="icon" href="logo-mark.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/logo-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/lib/codemirror.min.css">
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/lib/codemirror.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/mode/sql/sql.min.js"></script>
@@ -278,6 +278,8 @@
       </select>
     </label>
     <button id="reset">Reset to sample</button>
+    <button id="clear" title="Empty both editors">Clear</button>
+    <button id="share" title="Save these schemas and copy a link to them">Share</button>
     <span class="hint">Ctrl+Enter / Cmd+Enter runs the diff.</span>
   </div>
 
@@ -309,8 +311,8 @@
 
   async function loadSample() {
     const [c, d] = await Promise.all([
-      fetch("current.sql").then((r) => r.text()),
-      fetch("desired.sql").then((r) => r.text()),
+      fetch("/current.sql").then((r) => r.text()),
+      fetch("/desired.sql").then((r) => r.text()),
     ]);
     current.setValue(c);
     desired.setValue(d);
@@ -339,23 +341,72 @@
     for (const el of controls()) el.disabled = on;
   }
 
+  // What a run reads, and what a share saves.
+  function inputs() {
+    const allowDrop = $("allow-drop").value;
+    return {
+      current: current.getValue(),
+      desired: desired.getValue(),
+      allow_drop: allowDrop ? [allowDrop] : [],
+      manage_routine: $("manage-routine").checked,
+      bulk_alter: $("bulk-alter").checked,
+    };
+  }
+
+  // A share link is /p/<id>; the Worker serves this page for it.
+  const sharedId = location.pathname.match(/^\/p\/([^/]+)$/)?.[1];
+
+  async function loadShare(id) {
+    const res = await fetch(`/api/share/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error(`share ${id}: HTTP ${res.status}`);
+    const s = await res.json();
+    current.setValue(s.current);
+    desired.setValue(s.desired);
+    $("allow-drop").value = s.allow_drop[0] ?? "";
+    $("manage-routine").checked = s.manage_routine;
+    $("bulk-alter").checked = s.bulk_alter;
+  }
+
+  async function share() {
+    if (busy) return;
+    const button = $("share");
+    button.disabled = true;
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(inputs()),
+      });
+      const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (body.error) {
+        status.textContent = body.error;
+        return;
+      }
+      // The address bar now shows the link too, so the status stays short.
+      history.replaceState(null, "", `/p/${body.id}`);
+      try {
+        await navigator.clipboard.writeText(location.href);
+        status.textContent = "Link copied";
+      } catch {
+        status.textContent = "Copy the link from the address bar";
+      }
+    } catch (e) {
+      status.textContent = String(e);
+    } finally {
+      button.disabled = busy;
+    }
+  }
+
   async function run() {
     if (busy) return;
     setBusy(true);
     status.textContent = "Running... (the first run starts the container)";
     const started = performance.now();
     try {
-      const allowDrop = $("allow-drop").value;
       const res = await fetch("/api/diff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          current: current.getValue(),
-          desired: desired.getValue(),
-          allow_drop: allowDrop ? [allowDrop] : [],
-          manage_routine: $("manage-routine").checked,
-          bulk_alter: $("bulk-alter").checked,
-        }),
+        body: JSON.stringify(inputs()),
       });
       const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
       if (body.error) {
@@ -382,7 +433,18 @@
     current.setValue(desired.getValue());
     run();
   });
+  $("share").addEventListener("click", share);
+  // Empty against empty has no diff to show, so clearing does not run one.
+  $("clear").addEventListener("click", () => {
+    history.replaceState(null, "", "/");
+    current.setValue("");
+    desired.setValue("");
+    render("", false);
+    status.textContent = "";
+    current.focus();
+  });
   $("reset").addEventListener("click", async () => {
+    history.replaceState(null, "", "/");
     await loadSample();
     run();
   });
@@ -395,7 +457,17 @@
       run();
     }
   });
-  loadSample().then(run);
+  if (sharedId) {
+    loadShare(sharedId).then(run, async (e) => {
+      console.error(e);
+      history.replaceState(null, "", "/");
+      await loadSample();
+      await run();
+      status.textContent = "The shared link was not found, so the sample is shown.";
+    });
+  } else {
+    loadSample().then(run);
+  }
 </script>
 </body>
 </html>
