@@ -9,7 +9,7 @@ COPY server/ /src/
 RUN CGO_ENABLED=0 go build -o /out/server .
 
 FROM debian:trixie-slim AS pista
-ARG PISTA_VERSION=1.64.0
+ARG PISTA_VERSION=1.65.0
 ARG TARGETARCH=amd64
 ADD https://github.com/winebarrel/pistachio/releases/download/v${PISTA_VERSION}/pistachio_${PISTA_VERSION}_linux_${TARGETARCH}.tar.gz \
     https://github.com/winebarrel/pistachio/releases/download/v${PISTA_VERSION}/checksums.txt \

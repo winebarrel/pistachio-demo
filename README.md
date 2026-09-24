@@ -108,7 +108,8 @@ trigger CI. The workflow therefore starts CI on the new branch itself, with
   "desired": "CREATE TABLE ...",
   "allow_drop": ["column"],
   "manage_routine": true,
-  "bulk_alter": false
+  "bulk_alter": false,
+  "explain": false
 }
 ```
 
