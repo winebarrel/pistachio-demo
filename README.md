@@ -96,3 +96,7 @@ trigger CI. The workflow therefore starts CI on the new branch itself, with
 ```
 
 and returns `{"output": "..."}`, or `{"error": "..."}` when pista fails.
+
+`POST /api/fmt` takes `{"current": "...", "desired": "..."}`, formats both with
+`pista fmt`, and returns them in the same shape. When either fails to parse it
+returns only `{"error": "..."}`, naming the file.

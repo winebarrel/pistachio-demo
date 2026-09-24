@@ -10,7 +10,7 @@
 <meta property="og:title" content="pistachio playground">
 <meta property="og:description" content="Edit two PostgreSQL schemas and see the DDL pista diff generates. Nothing to install, no database needed.">
 <meta property="og:url" content="https://pistachio-demo.winebarrel.workers.dev/">
-<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=3">
+<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=4">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The pistachio playground: two schema editors and the DDL pista diff generates">
@@ -335,6 +335,7 @@
 
   <div class="controls">
     <button id="run" class="primary">Run pista diff</button>
+    <button id="format" title="Format both editors with pista fmt">Format</button>
     <label><input type="checkbox" id="manage-routine" checked> --manage-routine</label>
     <label><input type="checkbox" id="bulk-alter"> --bulk-alter</label>
     <label>--allow-drop
@@ -507,56 +508,99 @@
   // after this long is dropped so the page does not stay locked.
   const RUN_TIMEOUT_MS = 60000;
 
-  async function run() {
-    if (busy) return;
+  // Sends one request to pista in the container. While it is in flight the
+  // page is locked and shows progress; the elapsed time ticks so a slow
+  // request, such as one that waits for a container to start, still visibly
+  // moves. Returns pista's JSON answer, or null after showing why there is
+  // none: the platform failed, or no answer came in time.
+  async function callPista(path, body, verb) {
     setBusy(true);
     const started = performance.now();
-    // The elapsed time ticks so a slow run, such as one that waits for a
-    // container to start, still visibly moves.
     const tick = () => {
       const seconds = Math.floor((performance.now() - started) / 1000);
-      status.textContent = `Running... ${seconds} s (the first run starts the container)`;
+      status.textContent = `${verb}... ${seconds} s (the first run starts the container)`;
     };
     tick();
     const ticker = setInterval(tick, 250);
     try {
-      const res = await fetch("/api/diff", {
+      const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(inputs()),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
       });
       const text = await res.text();
-      let body = null;
+      let answer = null;
       try {
-        body = JSON.parse(text);
+        answer = JSON.parse(text);
       } catch {}
-      if (!body) {
+      if (!answer) {
         // Not an answer from pista: the platform failed on the way there.
         const reason = text.trim() || res.statusText;
         const hint = /try again/i.test(reason) ? "" : "\nTry again.";
         render(`HTTP ${res.status}: ${reason}${hint}`, true);
         status.textContent = "Failed";
-        return;
+        return null;
       }
-      if (body.error) {
-        render(body.error, true);
-      } else {
-        render(body.output.replace(/\n$/, ""), false);
-      }
-      status.textContent = `Done in ${Math.round(performance.now() - started)} ms`;
+      answer.elapsed = Math.round(performance.now() - started);
+      return answer;
     } catch (e) {
       const timedOut = e.name === "TimeoutError";
       render(timedOut ? `No answer after ${RUN_TIMEOUT_MS / 1000} s. Try again.` : String(e), true);
       status.textContent = "Failed";
+      return null;
     } finally {
       clearInterval(ticker);
       setBusy(false);
     }
   }
 
+  async function run() {
+    if (busy) return;
+    const answer = await callPista("/api/diff", inputs(), "Running");
+    if (!answer) return;
+    if (answer.error) {
+      render(answer.error, true);
+    } else {
+      render(answer.output.replace(/\n$/, ""), false);
+    }
+    status.textContent = `Done in ${answer.elapsed} ms`;
+  }
+
+  // Formats both editors with pista fmt. When either fails to parse, pista
+  // returns neither, so both editors stay as they were and the output says
+  // which file failed. On success the diff runs again, so the output never
+  // keeps a format error from an earlier attempt.
+  // Replaces the editor text as one ordinary edit, so undo brings the old
+  // text back, and keeps the cursor line and scroll position where they were.
+  function replaceText(cm, text) {
+    if (cm.getValue() === text) return;
+    const cursor = cm.getCursor();
+    const { left, top } = cm.getScrollInfo();
+    cm.setValue(text);
+    cm.setCursor(cursor);
+    cm.scrollTo(left, top);
+  }
+
+  async function format() {
+    if (busy) return;
+    const { current: c, desired: d } = inputs();
+    const answer = await callPista("/api/fmt", { current: c, desired: d }, "Formatting");
+    if (!answer) return;
+    if (answer.error) {
+      render(`Could not format:\n${answer.error}`, true);
+      status.textContent = "Format failed";
+      return;
+    }
+    replaceText(current, answer.current);
+    replaceText(desired, answer.desired);
+    await run();
+  }
+
+
 
   runButton.addEventListener("click", run);
+  $("format").addEventListener("click", format);
   // Copying desired into current stands in for applying the diff.
   $("copy-to-desired").addEventListener("click", () => {
     desired.setValue(current.getValue());
