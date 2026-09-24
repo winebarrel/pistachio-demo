@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pistachio-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  // The page and the sample schemas are static assets. A request that
+  // matches no asset reaches the Worker, which forwards /api/* to the
+  // container.
+  "assets": {
+    "directory": "./public"
+  },
+  "containers": [
+    {
+      "class_name": "PistaContainer",
+      "image": "./Dockerfile",
+      "instance_type": "lite",
+      "max_instances": 3
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PISTA",
+        "class_name": "PistaContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PistaContainer"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
