@@ -23,6 +23,7 @@
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/lib/codemirror.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/mode/sql/sql.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/addon/runmode/runmode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/addon/comment/comment.min.js"></script>
 <style>
   :root {
     color-scheme: light dark;
@@ -408,7 +409,7 @@
         <option value="trigger">trigger</option>
       </select>
     </label>
-    <span class="hint">Ctrl+Enter / Cmd+Enter runs the diff.</span>
+    <span class="hint">Ctrl+Enter runs the diff. Ctrl+/ comments lines. (Cmd on a Mac)</span>
   </fieldset>
 
 
@@ -436,6 +437,10 @@
     extraKeys: {
       "Ctrl-Enter": () => run(),
       "Cmd-Enter": () => run(),
+      // Comment or uncomment the selected lines with "-- ", placed at their
+      // indentation as code editors do.
+      "Ctrl-/": (cm) => cm.toggleComment({ indent: true }),
+      "Cmd-/": (cm) => cm.toggleComment({ indent: true }),
       // Indent with spaces, as the sample files do.
       Tab: (cm) => cm.replaceSelection("    "),
     },
