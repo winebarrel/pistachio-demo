@@ -175,6 +175,11 @@
   @media (max-width: 800px) {
     .CodeMirror { height: 300px; }
   }
+  /* No elastic bounce at the ends of a sideways scroll. On iOS the bounce
+     moved the text but not the line numbers, leaving them out of place.
+     Only the x axis: a vertical swipe that reaches the end of the editor
+     still carries on to the page. */
+  .CodeMirror-scroll { overscroll-behavior-x: none; }
   .CodeMirror-focused { outline: 2px solid var(--accent); outline-offset: -2px; }
   .CodeMirror-gutters { background: var(--code-bg); border-right: 1px solid var(--border); }
   .CodeMirror-linenumber { color: var(--gutter); }
