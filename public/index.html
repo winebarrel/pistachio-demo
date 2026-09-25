@@ -10,7 +10,7 @@
 <meta property="og:title" content="pistachio playground">
 <meta property="og:description" content="Edit two PostgreSQL schemas and see the DDL pista diff generates. Nothing to install, no database needed.">
 <meta property="og:url" content="https://pistachio-demo.winebarrel.workers.dev/">
-<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=5">
+<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=7">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The pistachio playground: two schema editors and the DDL pista diff generates">
@@ -366,6 +366,7 @@
     <div class="copy">
       <button id="copy-to-desired" title="Copy current.sql to desired.sql" aria-label="Copy current.sql to desired.sql"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg></button>
       <button id="copy-to-current" title="Copy desired.sql to current.sql, as if the diff had been applied" aria-label="Copy desired.sql to current.sql"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M11 6l-6 6 6 6"/></svg></button>
+      <button id="swap" title="Swap current.sql and desired.sql" aria-label="Swap current.sql and desired.sql"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/></svg></button>
     </div>
     <section class="panel">
       <h2>desired.sql <span>- what you want it to hold</span></h2>
@@ -660,6 +661,14 @@
   // Copying desired into current stands in for applying the diff.
   $("copy-to-desired").addEventListener("click", () => {
     desired.setValue(current.getValue());
+    run();
+  });
+  // Swapping shows the diff that goes the other way, from desired back to
+  // current.
+  $("swap").addEventListener("click", () => {
+    const c = current.getValue();
+    current.setValue(desired.getValue());
+    desired.setValue(c);
     run();
   });
   $("copy-to-current").addEventListener("click", () => {
