@@ -10,11 +10,15 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
-  // Shared schemas, keyed by share ID. With no id here, wrangler creates the
-  // namespace on the first deploy.
+  // SHARES holds shared schemas, keyed by share ID. USAGE holds the daily
+  // count of AI examples. With no id here, wrangler creates each namespace on
+  // the first deploy.
   "kv_namespaces": [
     {
       "binding": "SHARES"
+    },
+    {
+      "binding": "USAGE"
     }
   ],
   // Workers AI writes the AI examples (POST /api/example).

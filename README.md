@@ -85,7 +85,9 @@ the diff. The Worker picks the subject and the change at random from lists in
 pista then says so in the output.
 
 Each client address gets 5 examples a minute, through the `EXAMPLE_LIMIT`
-rate limit binding.
+rate limit binding, and all clients together get 100 a day (UTC), counted in
+the `USAGE` KV namespace. The daily cap bounds what Workers AI costs. KV is not
+atomic, so requests at the same moment can go slightly over it.
 
 ## Star count
 

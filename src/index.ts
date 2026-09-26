@@ -131,6 +131,9 @@ async function forwardToContainer(
 const EXAMPLE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const EXAMPLE_MAX_TOKENS = 1500;
 
+// AI examples a day for all clients together.
+const EXAMPLES_PER_DAY = 100;
+
 // Each call draws a subject and a change from these lists, so examples vary
 // and each one shows something pista does.
 const EXAMPLE_SUBJECTS = [
@@ -184,6 +187,24 @@ async function example(request: Request, env: Env): Promise<Response> {
   if (!success) {
     return json({ error: "Too many AI examples. Wait a minute." }, 429);
   }
+
+  // All clients together get EXAMPLES_PER_DAY a day, counted per UTC date,
+  // which caps what Workers AI can cost. KV is not atomic and a read can be
+  // up to a minute stale, so calls at the same moment may go a little over.
+  const key = `example-count:${new Date().toISOString().slice(0, 10)}`;
+  const count = Number(await env.USAGE.get(key)) || 0;
+  if (count >= EXAMPLES_PER_DAY) {
+    return json(
+      {
+        error: "AI examples are used up for today. Try again after 00:00 UTC.",
+      },
+      429,
+    );
+  }
+  // The count is kept two days, long enough to outlive its date.
+  await env.USAGE.put(key, String(count + 1), {
+    expirationTtl: 2 * 24 * 60 * 60,
+  });
 
   const subject = pick(EXAMPLE_SUBJECTS);
   const change = pick(EXAMPLE_CHANGES);
