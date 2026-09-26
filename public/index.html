@@ -98,6 +98,19 @@
   .version:hover { border-color: var(--accent); color: var(--accent); }
   .version[hidden] { display: none; }
   header p { margin: 0; color: var(--muted); }
+  /* Asks Workers AI for a fresh pair of schemas. */
+  .ai-example {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+  .ai-example svg { width: 14px; height: 14px; color: var(--accent); }
   .github {
     display: inline-flex;
     align-items: center;
@@ -380,7 +393,9 @@
 <body>
 <header>
   <div class="intro">
-    <h1>pistachio playground <a id="version" class="version" hidden></a></h1>
+    <h1>pistachio playground <a id="version" class="version" hidden></a>
+      <button id="ai-example" class="ai-example" title="Have AI write a pair of schemas that differ by one change, then diff them"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>Try an AI example</button>
+    </h1>
     <p>
       Edit the two schemas and run <code>pista diff</code> to see the DDL that
       takes the current one to the desired one. No database is involved.
@@ -520,7 +535,7 @@
   // Everything a run reads from. Locking it keeps the result in step with
   // the inputs, and one run at a time means no late answer can overwrite a
   // newer one.
-  const controls = () => document.querySelectorAll("main button, main select, main input");
+  const controls = () => document.querySelectorAll("main button, main select, main input, #ai-example");
   let busy = false;
 
   function setBusy(on) {
@@ -666,12 +681,12 @@
   // request, such as one that waits for a container to start, still visibly
   // moves. Returns pista's JSON answer, or null after showing why there is
   // none: the platform failed, or no answer came in time.
-  async function callPista(path, body, verb) {
+  async function callPista(path, body, verb, note = " (the first run starts the container)") {
     setBusy(true);
     const started = performance.now();
     const tick = () => {
       const seconds = Math.floor((performance.now() - started) / 1000);
-      status.textContent = `${verb}... ${seconds} s (the first run starts the container)`;
+      status.textContent = `${verb}... ${seconds} s${note}`;
     };
     tick();
     const ticker = setInterval(tick, 250);
@@ -720,6 +735,26 @@
     status.textContent = `Done in ${answer.elapsed} ms`;
   }
 
+  // Fills both editors with a pair of schemas Workers AI writes, then runs
+  // the diff and says what the AI changed. What the AI writes can be wrong;
+  // pista then says so in the output, as it would for any input.
+  async function aiExample() {
+    if (busy) return;
+    const answer = await callPista("/api/example", {}, "Asking AI for an example", "");
+    if (!answer) return;
+    if (answer.error) {
+      render(answer.error, true);
+      status.textContent = "Failed";
+      return;
+    }
+    hideShare();
+    history.replaceState(null, "", "/");
+    replaceText(current, answer.current);
+    replaceText(desired, answer.desired);
+    await run();
+    status.textContent = `AI example: ${answer.summary}`;
+  }
+
   // Formats both editors with pista fmt. When either fails to parse, pista
   // returns neither, so both editors stay as they were and the output says
   // which file failed. On success the diff runs again, so the output never
@@ -754,6 +789,7 @@
 
   runButton.addEventListener("click", run);
   $("format").addEventListener("click", format);
+  $("ai-example").addEventListener("click", aiExample);
   // Copying desired into current stands in for applying the diff.
   $("copy-to-desired").addEventListener("click", () => {
     desired.setValue(current.getValue());

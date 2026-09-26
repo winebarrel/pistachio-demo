@@ -75,6 +75,18 @@ The KV namespace is the `SHARES` binding in `wrangler.jsonc`. It has no `id`,
 so wrangler creates the namespace on the first deploy. For that, the API token
 also needs Workers KV Storage: Edit.
 
+## AI examples
+
+The "Try an AI example" button next to the title asks Workers AI
+(`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) for a small current schema and a
+desired one that differs by one change, fills the editors with them and runs
+the diff. The Worker picks the subject and the change at random from lists in
+`src/index.ts`, so examples vary. What the model writes can be invalid SQL;
+pista then says so in the output.
+
+Each client address gets 5 examples a minute, through the `EXAMPLE_LIMIT`
+rate limit binding.
+
 ## Star count
 
 The GitHub link in the header shows the star count of winebarrel/pistachio.
