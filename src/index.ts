@@ -126,6 +126,142 @@ async function forwardToContainer(
   }
 }
 
+// The model that writes AI examples, and the most text it may write. An
+// example is two short schemas, so the cap keeps each call cheap.
+const EXAMPLE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const EXAMPLE_MAX_TOKENS = 1500;
+
+// AI examples a day for all clients together.
+const EXAMPLES_PER_DAY = 100;
+
+// Each call draws a subject and a change from these lists, so examples vary
+// and each one shows something pista does.
+const EXAMPLE_SUBJECTS = [
+  "a blog",
+  "an online shop",
+  "a task tracker",
+  "a library",
+  "a chat app",
+  "a clinic's appointments",
+  "a school's courses",
+  "a hotel's bookings",
+  "an event ticketing site",
+  "a recipe site",
+  "a fleet of delivery vans",
+  "a support desk",
+];
+const EXAMPLE_CHANGES = [
+  "add a column with a default and a NOT NULL constraint",
+  "add a new table with a foreign key to an existing one",
+  "add an index and a unique constraint",
+  "add a CHECK constraint and change a column's type",
+  "add a value to an enum type and use it as a column default",
+  "add a view that joins two tables",
+  "add a partial index and a composite index",
+  "add a generated column",
+  "add a domain type and use it for a column",
+  "change a foreign key to ON DELETE CASCADE",
+];
+
+const EXAMPLE_PROMPT = `You write examples for pistachio, a tool that diffs two PostgreSQL schemas and prints the DDL that turns the current one into the desired one.
+Answer with JSON: {"summary": ..., "current": ..., "desired": ...}.
+- current: a small schema of 2 to 4 tables, as CREATE statements only. No INSERT, no CREATE EXTENSION, no CREATE SCHEMA, no GRANT, no comments.
+- desired: the same schema with the change applied, written as the full schema again, not as ALTER statements.
+- summary: one short English sentence saying what changed.
+Use valid PostgreSQL 17 syntax, 4-space indentation and lower-case identifiers.`;
+
+interface Example {
+  summary: string;
+  current: string;
+  desired: string;
+}
+
+const pick = <T>(list: T[]): T => list[Math.floor(Math.random() * list.length)];
+
+// Has the model write a current and a desired schema that differ by one
+// change. The page fills its editors with them and runs the diff.
+async function example(request: Request, env: Env): Promise<Response> {
+  // Each call costs Workers AI time, so one address gets a few a minute.
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const { success } = await env.EXAMPLE_LIMIT.limit({ key: ip });
+  if (!success) {
+    return json({ error: "Too many AI examples. Wait a minute." }, 429);
+  }
+
+  // All clients together get EXAMPLES_PER_DAY a day, counted per UTC date,
+  // which caps what Workers AI can cost. KV is not atomic and a read can be
+  // up to a minute stale, so calls at the same moment may go a little over.
+  const key = `example-count:${new Date().toISOString().slice(0, 10)}`;
+  const count = Number(await env.USAGE.get(key)) || 0;
+  if (count >= EXAMPLES_PER_DAY) {
+    return json(
+      {
+        error: "AI examples are used up for today. Try again after 00:00 UTC.",
+      },
+      429,
+    );
+  }
+  // The count is kept two days, long enough to outlive its date.
+  await env.USAGE.put(key, String(count + 1), {
+    expirationTtl: 2 * 24 * 60 * 60,
+  });
+
+  const subject = pick(EXAMPLE_SUBJECTS);
+  const change = pick(EXAMPLE_CHANGES);
+  let answer: unknown;
+  try {
+    const res = await env.AI.run(EXAMPLE_MODEL, {
+      messages: [
+        { role: "system", content: EXAMPLE_PROMPT },
+        {
+          role: "user",
+          content: `The schema is for ${subject}. The change: ${change}.`,
+        },
+      ],
+      max_tokens: EXAMPLE_MAX_TOKENS,
+      temperature: 0.7,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            current: { type: "string" },
+            desired: { type: "string" },
+          },
+          required: ["summary", "current", "desired"],
+        },
+      },
+    });
+    // In JSON mode the answer may come parsed or as text.
+    const response = (res as { response?: unknown }).response;
+    answer = typeof response === "string" ? JSON.parse(response) : response;
+  } catch (e) {
+    console.error("AI example failed", e);
+    return json(
+      { error: "The AI could not write an example. Try again." },
+      502,
+    );
+  }
+
+  const a = answer as Partial<Example> | null;
+  if (
+    typeof a?.summary !== "string" ||
+    typeof a.current !== "string" ||
+    typeof a.desired !== "string" ||
+    !a.current.trim() ||
+    !a.desired.trim()
+  ) {
+    return json({ error: "The AI wrote no usable example. Try again." }, 502);
+  }
+  const trimmed = (s: string) => `${s.trim()}\n`;
+  return json({
+    summary: a.summary.trim(),
+    current: trimmed(a.current),
+    desired: trimmed(a.desired),
+  });
+}
+
 // The repository the page links to, and how long its star count is cached.
 // The Worker fetches the count, not the page, and keeps it in the Cache API,
 // so GitHub sees about one request an hour per data center.
@@ -171,6 +307,9 @@ export default {
 
     if (url.pathname === "/api/share" && request.method === "POST") {
       return createShare(request, env);
+    }
+    if (url.pathname === "/api/example" && request.method === "POST") {
+      return example(request, env);
     }
     if (url.pathname === "/api/stars" && request.method === "GET") {
       return stars(env, ctx);
