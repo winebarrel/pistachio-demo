@@ -75,7 +75,7 @@ The KV namespace is the `SHARES` binding in `wrangler.jsonc`. It has no `id`,
 so wrangler creates the namespace on the first deploy. For that, the API token
 also needs Workers KV Storage: Edit.
 
-## AI examples
+## AI examples and fixes
 
 The "Try an AI example" button next to the title asks Workers AI
 (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) for a small current schema and a
@@ -84,10 +84,16 @@ the diff. The Worker picks the subject and the change at random from lists in
 `src/index.ts`, so examples vary. What the model writes can be invalid SQL;
 pista then says so in the output.
 
-Each client address gets 5 examples a minute, through the `EXAMPLE_LIMIT`
-rate limit binding, and all clients together get 1000 a day (UTC), counted in
-the `USAGE` KV namespace. The daily cap bounds what Workers AI costs. KV is not
-atomic, so requests at the same moment can go slightly over it.
+When pista reports an error, a "Fix with AI" button appears by the output. It
+sends both files and the error to the same model, which returns the file the
+error is about with the fix. The page puts that file in its editor and runs
+the diff again. The request may be up to 24 KiB.
+
+Each client address gets 5 AI calls a minute, examples and fixes together,
+through the `AI_LIMIT` rate limit binding, and all clients together get 1000 a
+day (UTC), counted in the `USAGE` KV namespace. The daily cap bounds what
+Workers AI costs. KV is not atomic, so requests at the same moment can go
+slightly over it.
 
 ## Star count
 

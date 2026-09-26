@@ -11,7 +11,7 @@
     "binding": "ASSETS"
   },
   // SHARES holds shared schemas, keyed by share ID. USAGE holds the daily
-  // count of AI examples. With no id here, wrangler creates each namespace on
+  // count of AI calls. With no id here, wrangler creates each namespace on
   // the first deploy.
   "kv_namespaces": [
     {
@@ -21,15 +21,16 @@
       "binding": "USAGE"
     }
   ],
-  // Workers AI writes the AI examples (POST /api/example).
+  // Workers AI writes the AI examples (POST /api/example) and fixes
+  // (POST /api/fix).
   "ai": {
     "binding": "AI"
   },
-  // AI examples per client address: 5 a minute. The namespace_id is any
+  // AI calls per client address: 5 a minute. The namespace_id is any
   // number unique to this account.
   "ratelimits": [
     {
-      "name": "EXAMPLE_LIMIT",
+      "name": "AI_LIMIT",
       "namespace_id": "1001",
       "simple": {
         "limit": 5,
