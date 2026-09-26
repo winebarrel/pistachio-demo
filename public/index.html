@@ -10,7 +10,7 @@
 <meta property="og:title" content="pistachio playground">
 <meta property="og:description" content="Edit two PostgreSQL schemas and see the DDL pista diff generates. Nothing to install, no database needed.">
 <meta property="og:url" content="https://pistachio-demo.winebarrel.workers.dev/">
-<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=7">
+<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=8">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The pistachio playground: two schema editors and the DDL pista diff generates">
@@ -197,6 +197,31 @@
      locked until the new one arrives. */
   body.busy #output { opacity: 0.45; filter: grayscale(1); }
   body.busy .CodeMirror { cursor: progress; }
+  /* Between the editors and the output. Dragging it trades height between
+     the two: down makes the editors taller and the output shorter. */
+  .splitter {
+    position: relative;
+    height: 14px;
+    margin: -8px 0;
+    cursor: row-resize;
+    touch-action: none;
+  }
+  .splitter::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 48px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    transform: translate(-50%, -50%);
+  }
+  .splitter:hover::before, .splitter:focus-visible::before, body.resizing .splitter::before {
+    background: var(--accent);
+  }
+  .splitter:focus-visible { outline: none; }
+  body.resizing { cursor: row-resize; user-select: none; }
   #output {
     transition: opacity 0.15s;
     min-height: 120px;
@@ -373,6 +398,9 @@
       <textarea id="desired" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
     </section>
   </div>
+
+  <div id="splitter" class="splitter" role="separator" aria-orientation="horizontal" tabindex="0"
+       aria-label="Resize the editors and the output" title="Drag to resize. Double-click to reset."></div>
 
   <div class="controls">
     <div class="actions">
@@ -671,6 +699,64 @@
     desired.setValue(c);
     run();
   });
+  // The splitter trades height between the editors and the output, so the
+  // two together keep their size. The output grows with its content until
+  // the splitter is first used; from then on it has a fixed height and
+  // scrolls. Double-click, or Home on the keyboard, goes back to that.
+  const MIN_EDITOR = 120;
+  const MIN_OUTPUT = 80;
+  const splitter = $("splitter");
+  const editorHeight = () => current.getWrapperElement().offsetHeight;
+
+  // On a narrow screen the editors are stacked, so each takes half of the
+  // move and the splitter still follows the pointer.
+  const stacked = () =>
+    current.getWrapperElement().getBoundingClientRect().top !==
+    desired.getWrapperElement().getBoundingClientRect().top;
+
+  function resize(from, dy) {
+    const n = stacked() ? 2 : 1;
+    const d = Math.max(MIN_EDITOR - from.editor, Math.min(dy / n, (from.output - MIN_OUTPUT) / n));
+    for (const cm of [current, desired]) cm.setSize(null, from.editor + d);
+    output.style.height = `${from.output - d * n}px`;
+  }
+
+  function resetSizes() {
+    for (const cm of [current, desired]) {
+      cm.getWrapperElement().style.height = "";
+      cm.refresh();
+    }
+    output.style.height = "";
+  }
+
+  let drag = null;
+  splitter.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    splitter.setPointerCapture(e.pointerId);
+    drag = { y: e.clientY, editor: editorHeight(), output: output.offsetHeight };
+    document.body.classList.add("resizing");
+  });
+  splitter.addEventListener("pointermove", (e) => {
+    if (drag) resize(drag, e.clientY - drag.y);
+  });
+  const endDrag = () => {
+    drag = null;
+    document.body.classList.remove("resizing");
+  };
+  splitter.addEventListener("pointerup", endDrag);
+  splitter.addEventListener("pointercancel", endDrag);
+  splitter.addEventListener("dblclick", resetSizes);
+  splitter.addEventListener("keydown", (e) => {
+    const step = { ArrowUp: -20, ArrowDown: 20 }[e.key];
+    if (step) {
+      e.preventDefault();
+      resize({ editor: editorHeight(), output: output.offsetHeight }, step);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      resetSizes();
+    }
+  });
+
   $("copy-to-current").addEventListener("click", () => {
     current.setValue(desired.getValue());
     run();
