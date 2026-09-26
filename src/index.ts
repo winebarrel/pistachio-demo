@@ -179,7 +179,8 @@ Order the statements so that each one comes after every object it refers to: typ
 
 const FIX_PROMPT = `You fix schema files for pistachio, a tool that diffs two PostgreSQL schemas, current.sql and desired.sql, and prints the DDL that turns the current one into the desired one. The user sends both files and the error pistachio printed.
 Fix the file the error is about, and only what causes the error. pistachio reads CREATE statements and COMMENT ON only: no INSERT, no ALTER, no CREATE EXTENSION, no GRANT. A statement must come after every object it refers to.
-Keep everything else exactly as it is: the other statements, the comments, the spelling, the case, the blank lines and the indentation.
+Right above each statement you change or move, put a comment on a line of its own, written as /* ... */ and never with --, that says in one sentence what you fixed there. A statement you remove gets such a comment where it was.
+Keep everything else exactly as it is: the other statements, the comments already there, the spelling, the case, the blank lines and the indentation.
 Answer with JSON: {"summary": ..., "file": ..., "sql": ...}.
 - file: "current.sql" or "desired.sql", the file you fixed.
 - sql: that file in full, with the fix.
