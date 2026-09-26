@@ -374,6 +374,19 @@
   /* The status sits in the output header so a longer message never wraps
      the controls and pushes the output down. */
   .output-header { display: flex; align-items: center; gap: 12px; }
+  /* Shown with a pista error; asks Workers AI to fix the file. */
+  .ai-fix {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .ai-fix[hidden] { display: none; }
+  .ai-fix svg { width: 14px; height: 14px; color: var(--accent); }
   .run-state {
     display: inline-flex;
     align-items: center;
@@ -522,7 +535,7 @@
   </div>
 
   <section class="panel">
-    <h2 class="output-header">Output <span class="run-state"><span class="spinner" aria-hidden="true"></span><span id="status"></span></span></h2>
+    <h2 class="output-header">Output <span class="run-state"><span class="spinner" aria-hidden="true"></span><span id="status"></span></span><button id="ai-fix" class="ai-fix" title="Have AI fix the schema file this error is about" hidden><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>Fix with AI</button></h2>
     <div class="progress" aria-hidden="true"></div>
     <pre id="output" class="cm-s-pista"></pre>
   </section>
@@ -729,6 +742,7 @@
   // moves. Returns pista's JSON answer, or null after showing why there is
   // none: the platform failed, or no answer came in time.
   async function callPista(path, body, verb, note = " (the first run starts the container)") {
+    hideFix();
     setBusy(true);
     const started = performance.now();
     const tick = () => {
@@ -776,10 +790,50 @@
     if (!answer) return;
     if (answer.error) {
       render(answer.error, true);
+      offerFix(answer.error);
     } else {
       render(answer.output.replace(/\n$/, ""), false);
     }
     status.textContent = `Done in ${answer.elapsed} ms`;
+  }
+
+  // The pista error the Fix with AI button would send. The button shows only
+  // while the output holds that error.
+  let pistaError = "";
+  function offerFix(error) {
+    pistaError = error;
+    $("ai-fix").hidden = false;
+  }
+  function hideFix() {
+    $("ai-fix").hidden = true;
+  }
+
+  // Sends both files and the pista error to Workers AI, puts the file it
+  // fixed in its editor and runs the diff again. The text is replaced as one
+  // edit, so undo brings back what was there. The fix is not formatted, so
+  // the rest of the file stays as it was written.
+  async function aiFix() {
+    if (busy || !pistaError) return;
+    const error = pistaError;
+    const answer = await callPista(
+      "/api/fix",
+      { current: current.getValue(), desired: desired.getValue(), error },
+      "Asking AI for a fix",
+      "",
+    );
+    if (!answer) {
+      offerFix(error);
+      return;
+    }
+    if (answer.error) {
+      render(`${answer.error}\n\n${error}`, true);
+      status.textContent = "Failed";
+      offerFix(error);
+      return;
+    }
+    replaceText(answer.file === "current.sql" ? current : desired, answer.sql);
+    await run();
+    status.textContent = `AI fix in ${answer.file}: ${answer.summary}`;
   }
 
   // Fills both editors with a pair of schemas Workers AI writes, formats them
@@ -825,6 +879,7 @@
     if (!answer) return false;
     if (answer.error) {
       render(`Could not format:\n${answer.error}`, true);
+      offerFix(answer.error);
       status.textContent = "Format failed";
       return false;
     }
@@ -839,6 +894,7 @@
   runButton.addEventListener("click", run);
   $("format").addEventListener("click", format);
   $("ai-example").addEventListener("click", aiExample);
+  $("ai-fix").addEventListener("click", aiFix);
 
   // Shows the text diff of the two editors, as `diff -u current.sql
   // desired.sql` would print it, one colored line at a time.
