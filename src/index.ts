@@ -168,7 +168,8 @@ Answer with JSON: {"summary": ..., "current": ..., "desired": ...}.
 - current: a small schema of 2 to 4 tables, as CREATE statements only. No INSERT, no CREATE EXTENSION, no CREATE SCHEMA, no GRANT, no comments.
 - desired: the same schema with the change applied, written as the full schema again, not as ALTER statements. Right above each statement or column the change adds or modifies, put a comment on a line of its own, written as /* ... */ and never with --, that says in one sentence what changed there. No other comments.
 - summary: one short English sentence saying what changed.
-Use valid PostgreSQL 17 syntax and lower-case identifiers. Start every statement at the beginning of a line and leave a blank line between statements.`;
+Use valid PostgreSQL 17 syntax and lower-case identifiers. Start every statement at the beginning of a line and leave a blank line between statements.
+Order the statements so that each one comes after every object it refers to: types and domains first, then tables, each table after the tables its foreign keys reference. Put each CREATE INDEX right after the CREATE TABLE of the table it is on, and each view after all the tables it reads. The comment for a statement goes right above that statement, not above another one.`;
 
 interface Example {
   summary: string;
