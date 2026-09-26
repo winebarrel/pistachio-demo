@@ -38,17 +38,24 @@ jobs:
 
           branch="update-pista-$latest"
           if git ls-remote --exit-code --heads origin "$branch"; then
-            echo "$branch already exists"
-            exit 0
+            # A pull request for this branch, open or closed, means the work is
+            # done or was turned down. A branch without one is left from a run
+            # that pushed it and then failed to open the pull request.
+            prs=$(gh pr list --head "$branch" --state all --json number --jq length)
+            if [[ "$prs" != 0 ]]; then
+              echo "$branch already has a pull request"
+              exit 0
+            fi
+            echo "$branch exists without a pull request; opening one"
+          else
+            sed -i "s/^ARG PISTA_VERSION=.*/ARG PISTA_VERSION=$latest/" Dockerfile
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git switch -c "$branch"
+            git commit -am "Update pista to $latest"
+            git push origin "$branch"
           fi
-
-          sed -i "s/^ARG PISTA_VERSION=.*/ARG PISTA_VERSION=$latest/" Dockerfile
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git commit -am "Update pista to $latest"
-          git push origin "$branch"
 
           gh pr create \
             --head "$branch" \
