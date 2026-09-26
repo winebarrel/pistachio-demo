@@ -166,7 +166,7 @@ const EXAMPLE_CHANGES = [
 const EXAMPLE_PROMPT = `You write examples for pistachio, a tool that diffs two PostgreSQL schemas and prints the DDL that turns the current one into the desired one.
 Answer with JSON: {"summary": ..., "current": ..., "desired": ...}.
 - current: a small schema of 2 to 4 tables, as CREATE statements only. No INSERT, no CREATE EXTENSION, no CREATE SCHEMA, no GRANT, no comments.
-- desired: the same schema with the change applied, written as the full schema again, not as ALTER statements. Right above each statement or column the change adds or modifies, put a one-line comment that starts with "-- " and says what changed there. No other comments.
+- desired: the same schema with the change applied, written as the full schema again, not as ALTER statements. Right above each statement or column the change adds or modifies, put a comment on a line of its own, written as /* ... */ and never with --, that says in one sentence what changed there. No other comments.
 - summary: one short English sentence saying what changed.
 Use valid PostgreSQL 17 syntax and lower-case identifiers. Start every statement at the beginning of a line and leave a blank line between statements.`;
 
