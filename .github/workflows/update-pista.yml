@@ -27,12 +27,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Open a pull request for a new pista release
         run: |
-          latest=$(gh release view --repo winebarrel/pistachio --json tagName --jq .tagName)
-          latest=${latest#v}
-          current=$(sed -n 's/^ARG PISTA_VERSION=//p' Dockerfile)
+          # The playground offers the newest three releases, newest first.
+          # Drafts and prereleases are left out.
+          wanted=$(gh release list --repo winebarrel/pistachio --limit 20 \
+            --exclude-drafts --exclude-pre-releases \
+            --json tagName --jq '[.[].tagName | ltrimstr("v")][:3] | join(" ")')
+          current=$(sed -n 's/^ARG PISTA_VERSIONS="\(.*\)"$/\1/p' Dockerfile)
+          latest=${wanted%% *}
 
-          if [[ "$latest" == "$current" ]]; then
-            echo "pista $current is the latest release"
+          if [[ "$wanted" == "$current" ]]; then
+            echo "pista $current are the newest releases"
             exit 0
           fi
 
@@ -48,7 +52,7 @@ jobs:
             fi
             echo "$branch exists without a pull request; opening one"
           else
-            sed -i "s/^ARG PISTA_VERSION=.*/ARG PISTA_VERSION=$latest/" Dockerfile
+            sed -i "s/^ARG PISTA_VERSIONS=.*/ARG PISTA_VERSIONS=\"$wanted\"/" Dockerfile
 
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -60,7 +64,7 @@ jobs:
           gh pr create \
             --head "$branch" \
             --title "Update pista to $latest" \
-            --body "Updates pista from $current to $latest.
+            --body "Offers pista $wanted, in place of $current.
 
           Release notes: https://github.com/winebarrel/pistachio/releases/tag/v$latest"
 
