@@ -19,6 +19,9 @@ that runs `pista`:
 - `Dockerfile` puts the pista release binaries and the server into one image.
   `PISTA_VERSIONS` names the releases, newest first; each is installed as
   `pista-<version>`.
+  The runtime image is distroless (no shell or package manager), every file
+  it adds is read-only, and the server runs as an unprivileged user that can
+  write only the temporary directories.
 
 ## Requirements
 

@@ -31,12 +31,19 @@ RUN set -eu; \
       mv pista "/out/pista-$v"; \
     done
 
-# The release binaries link against glibc, so the runtime image is Debian.
-FROM debian:trixie-slim
+# The runtime image is as close to read-only as Cloudflare Containers allows;
+# it has no setting for a read-only root filesystem.
+# - distroless: glibc, which the release binaries link against, and little
+#   else. No shell, no package manager, no coreutils.
+# - Every file added is owned by root and mode 0555, so the user the server
+#   runs as can read and run them but not change them.
+# - That user is nonroot (65532). It can write only /tmp, where the server
+#   puts each request's schemas and removes them after, and its own home.
+FROM gcr.io/distroless/base-debian13:nonroot
 ARG PISTA_VERSIONS
 ENV PISTA_VERSIONS=${PISTA_VERSIONS}
-COPY --from=pista /out/ /usr/local/bin/
-COPY --from=build /out/server /usr/local/bin/server
-USER nobody
+COPY --from=pista --chown=0:0 --chmod=0555 /out/ /usr/local/bin/
+COPY --from=build --chown=0:0 --chmod=0555 /out/server /usr/local/bin/server
+USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/server"]
