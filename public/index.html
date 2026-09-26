@@ -735,9 +735,10 @@
     status.textContent = `Done in ${answer.elapsed} ms`;
   }
 
-  // Fills both editors with a pair of schemas Workers AI writes, then runs
-  // the diff and says what the AI changed. What the AI writes can be wrong;
-  // pista then says so in the output, as it would for any input.
+  // Fills both editors with a pair of schemas Workers AI writes, formats them
+  // with pista fmt, which runs the diff, and says what the AI changed. What
+  // the AI writes can be wrong; pista then says so in the output, as it
+  // would for any input, and the editors keep the text as the AI wrote it.
   async function aiExample() {
     if (busy) return;
     const answer = await callPista("/api/example", {}, "Asking AI for an example", "");
@@ -751,8 +752,7 @@
     history.replaceState(null, "", "/");
     replaceText(current, answer.current);
     replaceText(desired, answer.desired);
-    await run();
-    status.textContent = `AI example: ${answer.summary}`;
+    if (await format()) status.textContent = `AI example: ${answer.summary}`;
   }
 
   // Formats both editors with pista fmt. When either fails to parse, pista
@@ -770,19 +770,21 @@
     cm.scrollTo(left, top);
   }
 
+  // Returns whether both editors were formatted.
   async function format() {
-    if (busy) return;
+    if (busy) return false;
     const { version, current: c, desired: d } = inputs();
     const answer = await callPista("/api/fmt", { version, current: c, desired: d }, "Formatting");
-    if (!answer) return;
+    if (!answer) return false;
     if (answer.error) {
       render(`Could not format:\n${answer.error}`, true);
       status.textContent = "Format failed";
-      return;
+      return false;
     }
     replaceText(current, answer.current);
     replaceText(desired, answer.desired);
     await run();
+    return true;
   }
 
 

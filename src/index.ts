@@ -166,9 +166,9 @@ const EXAMPLE_CHANGES = [
 const EXAMPLE_PROMPT = `You write examples for pistachio, a tool that diffs two PostgreSQL schemas and prints the DDL that turns the current one into the desired one.
 Answer with JSON: {"summary": ..., "current": ..., "desired": ...}.
 - current: a small schema of 2 to 4 tables, as CREATE statements only. No INSERT, no CREATE EXTENSION, no CREATE SCHEMA, no GRANT, no comments.
-- desired: the same schema with the change applied, written as the full schema again, not as ALTER statements.
+- desired: the same schema with the change applied, written as the full schema again, not as ALTER statements. Right above each statement or column the change adds or modifies, put a one-line comment that starts with "-- " and says what changed there. No other comments.
 - summary: one short English sentence saying what changed.
-Use valid PostgreSQL 17 syntax, 4-space indentation and lower-case identifiers.`;
+Use valid PostgreSQL 17 syntax and lower-case identifiers. Start every statement at the beginning of a line and leave a blank line between statements.`;
 
 interface Example {
   summary: string;
@@ -254,11 +254,20 @@ async function example(request: Request, env: Env): Promise<Response> {
   ) {
     return json({ error: "The AI wrote no usable example. Try again." }, 502);
   }
-  const trimmed = (s: string) => `${s.trim()}\n`;
+  // The model often indents every statement after the first. pista fmt
+  // indents the lines inside a statement but leaves where each statement
+  // starts, so the indentation is removed here and the page formats the
+  // result.
+  const dedent = (s: string) =>
+    `${s
+      .trim()
+      .split("\n")
+      .map((line) => line.trimStart())
+      .join("\n")}\n`;
   return json({
     summary: a.summary.trim(),
-    current: trimmed(a.current),
-    desired: trimmed(a.desired),
+    current: dedent(a.current),
+    desired: dedent(a.desired),
   });
 }
 
