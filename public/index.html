@@ -10,7 +10,7 @@
 <meta property="og:title" content="pistachio playground">
 <meta property="og:description" content="Edit two PostgreSQL schemas and see the DDL pista diff generates. Nothing to install, no database needed.">
 <meta property="og:url" content="https://pistachio-demo.winebarrel.workers.dev/">
-<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=8">
+<meta property="og:image" content="https://pistachio-demo.winebarrel.workers.dev/og.png?v=9">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The pistachio playground: two schema editors and the DDL pista diff generates">
@@ -24,6 +24,7 @@
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/mode/sql/sql.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/addon/runmode/runmode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.21/addon/comment/comment.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/diff@9.0.0/dist/diff.min.js"></script>
 <style>
   :root {
     color-scheme: light dark;
@@ -44,6 +45,9 @@
     --tok-comment: #6e7781;
     --tok-builtin: #953800;
     --tok-operator: #1f2328;
+    --diff-add: #dafbe1;
+    --diff-del: #ffebe9;
+    --diff-hunk: #ddf4ff;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
@@ -65,6 +69,9 @@
       --tok-comment: #8b949e;
       --tok-builtin: #ffa657;
       --tok-operator: #e6edf3;
+      --diff-add: #12261e;
+      --diff-del: #25171c;
+      --diff-hunk: #121d2f;
     }
   }
   * { box-sizing: border-box; }
@@ -267,6 +274,37 @@
     background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   }
   .share-result[hidden] { display: none; }
+  /* The unified diff of the two editors, in a modal dialog that stays in
+     place and blocks the page until it is closed. */
+  .diff-dialog {
+    width: min(1100px, calc(100vw - 32px));
+    height: min(80vh, calc(100dvh - 32px));
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text);
+  }
+  .diff-dialog[open] { display: flex; flex-direction: column; }
+  .diff-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+  .diff-dialog header {
+    padding: 8px 12px;
+    font-weight: 600;
+  }
+  .diff-dialog header span { flex: 1; }
+  .diff-dialog pre {
+    flex: 1;
+    margin: 0;
+    padding: 8px 0;
+    overflow: auto;
+    background: var(--code-bg);
+    font: 13px/1.5 var(--mono);
+  }
+  .diff-dialog pre span { display: block; min-width: max-content; padding: 0 12px; white-space: pre; }
+  .diff-dialog .add { background: var(--diff-add); }
+  .diff-dialog .del { background: var(--diff-del); }
+  .diff-dialog .hunk { background: var(--diff-hunk); color: var(--muted); }
+  .diff-dialog .file { color: var(--muted); font-weight: 600; }
   .share-result label { font-weight: 600; }
   .share-result input {
     flex: 1 1 280px;
@@ -436,6 +474,7 @@
     <div class="actions">
       <button id="run" class="primary" title="Run pista diff (Ctrl+Enter / Cmd+Enter)">Run pista diff</button>
       <button id="format" title="Format both editors with pista fmt">Format</button>
+      <button id="show-diff" title="Show the unified diff of current.sql and desired.sql">Unified diff</button>
     </div>
     <div class="actions">
       <button id="reset">Reset to sample</button>
@@ -488,6 +527,14 @@
     <pre id="output" class="cm-s-pista"></pre>
   </section>
 </main>
+
+<dialog id="diff-dialog" class="diff-dialog" aria-labelledby="diff-title">
+  <header>
+    <span id="diff-title">Unified diff: current.sql → desired.sql</span>
+    <button id="close-diff">Close</button>
+  </header>
+  <pre id="diff-view"></pre>
+</dialog>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -792,6 +839,41 @@
   runButton.addEventListener("click", run);
   $("format").addEventListener("click", format);
   $("ai-example").addEventListener("click", aiExample);
+
+  // Shows the text diff of the two editors, as `diff -u current.sql
+  // desired.sql` would print it, one colored line at a time.
+  function showDiff() {
+    const view = $("diff-view");
+    view.textContent = "";
+    const patch = Diff.createTwoFilesPatch("current.sql", "desired.sql", current.getValue(), desired.getValue(), "", "", {
+      context: 3,
+    });
+    // The patch opens with a row of "=" and has no hunk when the two match.
+    const lines = patch.split("\n").filter((line) => !/^=+$/.test(line));
+    while (lines.length && lines[lines.length - 1] === "") lines.pop();
+    if (!lines.some((line) => line.startsWith("@@"))) lines.push("", "The two files are the same.");
+    // The file names come before the first hunk. Inside a hunk a line such
+    // as "--- x" is a removed SQL comment, not a file name.
+    let inHunk = false;
+    for (const line of lines) {
+      const span = document.createElement("span");
+      span.textContent = line || " ";
+      if (line.startsWith("@@")) inHunk = true;
+      if (!inHunk) span.className = "file";
+      else if (line.startsWith("@@")) span.className = "hunk";
+      else if (line.startsWith("+")) span.className = "add";
+      else if (line.startsWith("-")) span.className = "del";
+      view.append(span);
+    }
+    $("diff-dialog").showModal();
+    view.scrollTo(0, 0);
+  }
+  $("show-diff").addEventListener("click", showDiff);
+  $("close-diff").addEventListener("click", () => $("diff-dialog").close());
+  // A click on the backdrop outside the dialog closes it too.
+  $("diff-dialog").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.close();
+  });
   // Copying desired into current stands in for applying the diff.
   $("copy-to-desired").addEventListener("click", () => {
     desired.setValue(current.getValue());
