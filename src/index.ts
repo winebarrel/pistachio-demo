@@ -132,7 +132,7 @@ const EXAMPLE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const EXAMPLE_MAX_TOKENS = 1500;
 
 // AI examples a day for all clients together.
-const EXAMPLES_PER_DAY = 100;
+const EXAMPLES_PER_DAY = 1000;
 
 // Each call draws a subject and a change from these lists, so examples vary
 // and each one shows something pista does.
