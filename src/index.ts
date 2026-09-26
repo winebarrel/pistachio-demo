@@ -25,6 +25,7 @@ interface Share {
   manage_routine: boolean;
   bulk_alter: boolean;
   explain: boolean;
+  version: string;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -47,6 +48,11 @@ function parseShare(body: unknown): Share | null {
     manage_routine: b.manage_routine === true,
     bulk_alter: b.bulk_alter === true,
     explain: b.explain === true,
+    // Empty means the newest release at the time the link is opened.
+    version:
+      typeof b.version === "string" && /^[0-9A-Za-z.+-]{0,32}$/.test(b.version)
+        ? b.version
+        : "",
   };
 }
 

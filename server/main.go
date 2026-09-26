@@ -2,6 +2,10 @@
 // files in a JSON request and runs pista on them: `pista diff` for the DDL
 // that takes one to the other, and `pista fmt` to format both. No database is
 // involved.
+//
+// The image holds several pista releases, named in PISTA_VERSIONS newest
+// first and installed as pista-<version> in PISTA_BIN_DIR. A request picks
+// one by version; without one it gets the newest.
 package main
 
 import (
@@ -14,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +37,7 @@ const (
 )
 
 type diffRequest struct {
+	Version       string   `json:"version"`
 	Current       string   `json:"current"`
 	Desired       string   `json:"desired"`
 	AllowDrop     []string `json:"allow_drop"`
@@ -46,6 +52,7 @@ type diffResponse struct {
 }
 
 type fmtRequest struct {
+	Version string `json:"version"`
 	Current string `json:"current"`
 	Desired string `json:"desired"`
 }
@@ -58,33 +65,92 @@ type fmtResponse struct {
 	Error   string  `json:"error,omitempty"`
 }
 
-func main() {
-	pista := os.Getenv("PISTA_BIN")
-	if pista == "" {
-		pista = "pista"
+// diffOptions are the `pista diff` flags the page offers. A release that is
+// older than a flag does not list it in its help.
+var diffOptions = []string{"manage-routine", "bulk-alter", "explain", "allow-drop"}
+
+type release struct {
+	Version string   `json:"version"`
+	Options []string `json:"options"`
+}
+
+// releases are the pista binaries in the image, newest first.
+type releases struct {
+	dir      string
+	versions []string
+	options  func() ([]release, error)
+}
+
+func newReleases(dir string, versions []string) *releases {
+	r := &releases{dir: dir, versions: versions}
+	// Which options each release has cannot change while the server runs, so
+	// it is read from their help once.
+	r.options = sync.OnceValues(func() ([]release, error) {
+		var list []release
+		for _, v := range r.versions {
+			help, err := runPista(context.Background(), r.bin(v), "", "diff", "--help")
+			if err != nil {
+				return nil, err
+			}
+			rel := release{Version: v, Options: []string{}}
+			for _, opt := range diffOptions {
+				if strings.Contains(help, "--"+opt) {
+					rel.Options = append(rel.Options, opt)
+				}
+			}
+			list = append(list, rel)
+		}
+		return list, nil
+	})
+	return r
+}
+
+func (r *releases) bin(version string) string {
+	return filepath.Join(r.dir, "pista-"+version)
+}
+
+// resolve returns the binary for version, the newest when version is empty.
+func (r *releases) resolve(version string) (string, error) {
+	if version == "" {
+		return r.bin(r.versions[0]), nil
 	}
+	if slices.Contains(r.versions, version) {
+		return r.bin(version), nil
+	}
+	return "", errors.New("pista " + version + " is not available here; choose one of " + strings.Join(r.versions, ", "))
+}
+
+func main() {
+	versions := strings.Fields(os.Getenv("PISTA_VERSIONS"))
+	if len(versions) == 0 {
+		log.Fatal("PISTA_VERSIONS names no pista release")
+	}
+	dir := os.Getenv("PISTA_BIN_DIR")
+	if dir == "" {
+		dir = "/usr/local/bin"
+	}
+	rels := newReleases(dir, versions)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok\n")) //nolint:errcheck
 	})
-	// The version of the pista binary in the image. It cannot change while
-	// the server runs, so it is read once.
-	version := sync.OnceValues(func() (string, error) {
-		out, err := runPista(context.Background(), pista, "", "--version")
-		return strings.TrimSpace(out), err
-	})
-	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, _ *http.Request) {
-		v, err := version()
+	mux.HandleFunc("GET /api/versions", func(w http.ResponseWriter, _ *http.Request) {
+		list, err := rels.options()
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"version": v})
+		writeJSON(w, http.StatusOK, map[string]any{"versions": list})
 	})
 	mux.HandleFunc("POST /api/diff", func(w http.ResponseWriter, r *http.Request) {
 		var req diffRequest
 		if !decode(w, r, &req) {
+			return
+		}
+		pista, err := rels.resolve(req.Version)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, diffResponse{Error: err.Error()})
 			return
 		}
 
@@ -100,6 +166,11 @@ func main() {
 		if !decode(w, r, &req) {
 			return
 		}
+		pista, err := rels.resolve(req.Version)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, fmtResponse{Error: err.Error()})
+			return
+		}
 
 		res, err := runFmt(r.Context(), pista, &req)
 		if err != nil {
@@ -110,7 +181,7 @@ func main() {
 	})
 
 	addr := ":8080"
-	log.Printf("listening on %s", addr)
+	log.Printf("listening on %s with pista %s", addr, strings.Join(versions, ", "))
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }
@@ -153,6 +224,9 @@ func runPista(ctx context.Context, pista, dir string, args ...string) (string, e
 
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, pista, args...)
+	// Every release is installed as pista-<version>; its messages still name
+	// the command pista.
+	cmd.Args[0] = "pista"
 	cmd.Dir = dir
 	// Start from an empty environment so no PISTA_* variable changes the run.
 	cmd.Env = []string{}

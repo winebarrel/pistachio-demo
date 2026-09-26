@@ -301,6 +301,8 @@
   .options label { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 13px; }
   .options select { font: inherit; }
   .options .hint { margin-left: auto; }
+  /* An option the chosen pista release does not have. */
+  .options label.unsupported { opacity: 0.45; }
   button {
     font: inherit;
     padding: 6px 14px;
@@ -429,6 +431,9 @@
 
   <fieldset class="options">
     <legend>Options</legend>
+    <label class="version-option" title="The pista release to run">pista
+      <select id="pista-version"><option value="">latest</option></select>
+    </label>
     <label title="Manage functions and procedures"><input type="checkbox" id="manage-routine" checked> --manage-routine</label>
     <label title="Combine consecutive ALTER TABLE actions on the same table"><input type="checkbox" id="bulk-alter"> --bulk-alter</label>
     <label title="Comment each statement that scans or rewrites a table with what it does and what its lock blocks"><input type="checkbox" id="explain"> --explain</label>
@@ -523,18 +528,67 @@
     document.body.classList.toggle("busy", on);
     for (const cm of [current, desired]) cm.setOption("readOnly", on);
     for (const el of controls()) el.disabled = on;
+    // Unlocking must not re-enable an option the chosen release lacks.
+    if (!on) applyVersion();
   }
 
   // What a run reads, and what a share saves.
+  // The pista releases the container offers, newest first, each with the
+  // options it has: [{ version, options: ["explain", ...] }]. Empty until
+  // /api/versions answers; the server then runs its newest release.
+  let releases = [];
+  const chosenRelease = () => releases.find((r) => r.version === $("pista-version").value) ?? releases[0];
+  // Before the list arrives every option counts as supported.
+  const supports = (option) => !chosenRelease() || chosenRelease().options.includes(option);
+
+  // Greys out the options the chosen release lacks, and shows its version
+  // next to the title.
+  function applyVersion() {
+    const release = chosenRelease();
+    for (const option of ["manage-routine", "bulk-alter", "explain", "allow-drop"]) {
+      const el = $(option);
+      const ok = supports(option);
+      el.disabled = busy || !ok;
+      const label = el.closest("label");
+      label.dataset.title ??= label.title;
+      label.classList.toggle("unsupported", !ok);
+      label.title = ok ? label.dataset.title : `${label.dataset.title} (not in pista ${release.version})`;
+    }
+    const link = $("version");
+    if (release) {
+      link.textContent = `pista ${release.version}`;
+      link.href = `https://github.com/winebarrel/pistachio/releases/tag/v${release.version}`;
+      link.title = "Release notes for this version";
+    }
+    link.hidden = !release;
+  }
+
+  async function loadReleases() {
+    try {
+      const res = await fetch("/api/versions");
+      const body = await res.json();
+      if (!res.ok || !Array.isArray(body.versions)) return;
+      releases = body.versions.filter(
+        (r) => typeof r.version === "string" && /^[0-9A-Za-z.+-]+$/.test(r.version) && Array.isArray(r.options),
+      );
+      const select = $("pista-version");
+      select.textContent = "";
+      releases.forEach((r, i) => select.add(new Option(i === 0 ? `${r.version} (latest)` : r.version, r.version)));
+      applyVersion();
+    } catch {}
+  }
+
+  // An option the chosen release lacks is left out, whatever its control says.
   function inputs() {
-    const allowDrop = $("allow-drop").value;
+    const allowDrop = supports("allow-drop") ? $("allow-drop").value : "";
     return {
+      version: releases.length ? $("pista-version").value : "",
       current: current.getValue(),
       desired: desired.getValue(),
       allow_drop: allowDrop ? [allowDrop] : [],
-      manage_routine: $("manage-routine").checked,
-      bulk_alter: $("bulk-alter").checked,
-      explain: $("explain").checked,
+      manage_routine: supports("manage-routine") && $("manage-routine").checked,
+      bulk_alter: supports("bulk-alter") && $("bulk-alter").checked,
+      explain: supports("explain") && $("explain").checked,
     };
   }
 
@@ -551,6 +605,7 @@
     $("manage-routine").checked = s.manage_routine;
     $("bulk-alter").checked = s.bulk_alter;
     $("explain").checked = s.explain === true;
+    return typeof s.version === "string" ? s.version : "";
   }
 
   const shareUrl = $("share-url");
@@ -682,8 +737,8 @@
 
   async function format() {
     if (busy) return;
-    const { current: c, desired: d } = inputs();
-    const answer = await callPista("/api/fmt", { current: c, desired: d }, "Formatting");
+    const { version, current: c, desired: d } = inputs();
+    const answer = await callPista("/api/fmt", { version, current: c, desired: d }, "Formatting");
     if (!answer) return;
     if (answer.error) {
       render(`Could not format:\n${answer.error}`, true);
@@ -815,32 +870,45 @@
     })
     .catch(() => {});
 
-  // Asked for after the first run, which has started the container, so it
-  // adds no wait. When it cannot be read, nothing is shown.
-  async function showVersion() {
-    try {
-      const res = await fetch("/api/version");
-      const { version } = await res.json();
-      if (!res.ok || typeof version !== "string" || !/^[0-9A-Za-z.+-]+$/.test(version)) return;
-      const link = $("version");
-      link.textContent = `pista ${version}`;
-      link.href = `https://github.com/winebarrel/pistachio/releases/tag/v${version}`;
-      link.title = "Release notes for this version";
-      link.hidden = false;
-    } catch {}
+  $("pista-version").addEventListener("change", applyVersion);
+
+  // The release list and the schemas load side by side; the first diff
+  // waits for both, so it runs with the release a shared link names. The
+  // list's request is what starts the container, so the page shows progress
+  // while it waits.
+  async function init() {
+    const loading = loadReleases();
+    let notice = "";
+    let version = "";
+    if (sharedId) {
+      try {
+        version = await loadShare(sharedId);
+      } catch (e) {
+        console.error(e);
+        history.replaceState(null, "", "/");
+        await loadSample();
+        notice = "The shared link was not found, so the sample is shown.";
+      }
+    } else {
+      await loadSample();
+    }
+
+    setBusy(true);
+    status.textContent = "Starting... (the first run starts the container)";
+    await loading;
+    setBusy(false);
+    if (version && releases.some((r) => r.version === version)) {
+      $("pista-version").value = version;
+      applyVersion();
+    } else if (version && releases.length) {
+      notice = `pista ${version} from the link is no longer offered, so pista ${releases[0].version} is used.`;
+    }
+
+    await run();
+    if (notice) status.textContent = notice;
   }
 
-  if (sharedId) {
-    loadShare(sharedId).then(run, async (e) => {
-      console.error(e);
-      history.replaceState(null, "", "/");
-      await loadSample();
-      await run();
-      status.textContent = "The shared link was not found, so the sample is shown.";
-    }).then(showVersion);
-  } else {
-    loadSample().then(run).then(showVersion);
-  }
+  init();
 </script>
 </body>
 </html>

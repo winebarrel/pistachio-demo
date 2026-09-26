@@ -16,8 +16,9 @@ that runs `pista`:
   any request.
 - `server/` is the HTTP server inside the container. `POST /api/diff` writes
   the two schemas to a temporary directory and runs `pista diff` on them.
-- `Dockerfile` puts the pista release binary and the server into one image.
-  `PISTA_VERSION` picks the release.
+- `Dockerfile` puts the pista release binaries and the server into one image.
+  `PISTA_VERSIONS` names the releases, newest first; each is installed as
+  `pista-<version>`.
 
 ## Requirements
 
@@ -90,9 +91,15 @@ The secret stays across deploys, so this is needed once.
 
 ## Updating pista
 
-The `Update pista` workflow checks the pistachio releases every day. When a
-release is newer than `PISTA_VERSION` in `Dockerfile`, it opens a pull request
-that bumps it. It can also be run by hand from the Actions tab.
+The playground offers the newest three pistachio releases. The page picks
+one from the Options box; the newest is the default, and an option that a
+release does not have is greyed out.
+
+The `Update pista` workflow checks the pistachio releases every day. When the
+newest three differ from `PISTA_VERSIONS` in `Dockerfile`, it opens a pull
+request that replaces the list. It can also be run by hand from the Actions
+tab. It needs **Allow GitHub Actions to create and approve pull requests**
+under Settings > Actions > General.
 
 The workflow uses `GITHUB_TOKEN`, and a pull request opened with it does not
 trigger CI. The workflow therefore starts CI on the new branch itself, with
@@ -104,6 +111,7 @@ trigger CI. The workflow therefore starts CI on the new branch itself, with
 
 ```json
 {
+  "version": "1.66.0",
   "current": "CREATE TABLE ...",
   "desired": "CREATE TABLE ...",
   "allow_drop": ["column"],
@@ -114,10 +122,13 @@ trigger CI. The workflow therefore starts CI on the new branch itself, with
 ```
 
 and returns `{"output": "..."}`, or `{"error": "..."}` when pista fails.
+Without `version` it runs the newest release; a version the image does not
+have is answered with 400.
 
-`GET /api/version` returns `{"version": "..."}`, the version of the pista
-binary in the container. The page shows it next to its title.
+`GET /api/versions` returns the releases in the image, newest first, each
+with the `pista diff` options it has:
+`{"versions": [{"version": "1.66.0", "options": ["manage-routine", ...]}]}`.
 
-`POST /api/fmt` takes `{"current": "...", "desired": "..."}`, formats both with
-`pista fmt`, and returns them in the same shape. When either fails to parse it
-returns only `{"error": "..."}`, naming the file.
+`POST /api/fmt` takes `{"version": "...", "current": "...", "desired": "..."}`,
+formats both with `pista fmt`, and returns them in the same shape. When either
+fails to parse it returns only `{"error": "..."}`, naming the file.
