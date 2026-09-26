@@ -84,6 +84,19 @@
   }
   header .intro { flex: 1 1 320px; }
   header h1 { margin: 0 0 4px; font-size: 20px; }
+  /* The pista version the container runs, linked to its release notes. */
+  .version {
+    margin-left: 6px;
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    font: 12px var(--mono);
+    vertical-align: middle;
+    text-decoration: none;
+  }
+  .version:hover { border-color: var(--accent); color: var(--accent); }
+  .version[hidden] { display: none; }
   header p { margin: 0; color: var(--muted); }
   .github {
     display: inline-flex;
@@ -365,7 +378,7 @@
 <body>
 <header>
   <div class="intro">
-    <h1>pistachio playground</h1>
+    <h1>pistachio playground <a id="version" class="version" hidden></a></h1>
     <p>
       Edit the two schemas and run <code>pista diff</code> to see the DDL that
       takes the current one to the desired one. No database is involved.
@@ -802,6 +815,21 @@
     })
     .catch(() => {});
 
+  // Asked for after the first run, which has started the container, so it
+  // adds no wait. When it cannot be read, nothing is shown.
+  async function showVersion() {
+    try {
+      const res = await fetch("/api/version");
+      const { version } = await res.json();
+      if (!res.ok || typeof version !== "string" || !/^[0-9A-Za-z.+-]+$/.test(version)) return;
+      const link = $("version");
+      link.textContent = `pista ${version}`;
+      link.href = `https://github.com/winebarrel/pistachio/releases/tag/v${version}`;
+      link.title = "Release notes for this version";
+      link.hidden = false;
+    } catch {}
+  }
+
   if (sharedId) {
     loadShare(sharedId).then(run, async (e) => {
       console.error(e);
@@ -809,9 +837,9 @@
       await loadSample();
       await run();
       status.textContent = "The shared link was not found, so the sample is shown.";
-    });
+    }).then(showVersion);
   } else {
-    loadSample().then(run);
+    loadSample().then(run).then(showVersion);
   }
 </script>
 </body>

@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -66,6 +67,20 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok\n")) //nolint:errcheck
+	})
+	// The version of the pista binary in the image. It cannot change while
+	// the server runs, so it is read once.
+	version := sync.OnceValues(func() (string, error) {
+		out, err := runPista(context.Background(), pista, "", "--version")
+		return strings.TrimSpace(out), err
+	})
+	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, _ *http.Request) {
+		v, err := version()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"version": v})
 	})
 	mux.HandleFunc("POST /api/diff", func(w http.ResponseWriter, r *http.Request) {
 		var req diffRequest
