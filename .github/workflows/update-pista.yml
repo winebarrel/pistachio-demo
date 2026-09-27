@@ -6,9 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+  contents: read
 
 defaults:
   run:
@@ -21,11 +19,23 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # A pull request that GITHUB_TOKEN opens waits for approval before its CI
+      # runs, and a merge made with it does not start the deploy on main. An
+      # app token does neither.
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
       - name: Open a pull request for a new pista release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           # The playground offers the newest three releases, newest first.
           # Drafts and prereleases are left out.
@@ -68,8 +78,5 @@ jobs:
 
           Release notes: https://github.com/winebarrel/pistachio/releases/tag/v$latest"
 
-          # Neither the push nor the pull request above starts CI, because
-          # GITHUB_TOKEN made them. A workflow_dispatch event is the exception,
-          # and its checks land on the same commit, so the pull request shows
-          # them.
-          gh workflow run ci.yml --ref "$branch"
+          # Merges once the required checks pass.
+          gh pr merge "$branch" --auto --merge
