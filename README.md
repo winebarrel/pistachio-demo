@@ -120,13 +120,16 @@ release does not have is greyed out.
 
 The `Update pista` workflow checks the pistachio releases every day. When the
 newest three differ from `PISTA_VERSIONS` in `Dockerfile`, it opens a pull
-request that replaces the list. It can also be run by hand from the Actions
-tab. It needs **Allow GitHub Actions to create and approve pull requests**
-under Settings > Actions > General.
+request that replaces the list and enables auto-merge on it, so it merges once
+CI passes. It can also be run by hand from the Actions tab.
 
-The workflow uses `GITHUB_TOKEN`, and a pull request opened with it does not
-trigger CI. The workflow therefore starts CI on the new branch itself, with
-`workflow_dispatch`.
+The workflow opens the pull request with a token of the GitHub App that the
+pistachio release workflow uses, not `GITHUB_TOKEN`. CI on a pull request that
+`GITHUB_TOKEN` opens waits for approval, and a merge made with it does not
+deploy main. The App needs **Contents** and **Pull requests** write access to
+this repository, and the repository needs the `RELEASE_APP_CLIENT_ID` variable
+and the `RELEASE_APP_PRIVATE_KEY` secret. **Allow auto-merge** under
+Settings > General must be on.
 
 ## API
 
