@@ -189,6 +189,16 @@
     border-bottom: 1px solid var(--border);
   }
   .panel h2 span { color: var(--muted); font-weight: normal; }
+  /* Loads a local file into the editor below it. */
+  .editors .panel h2 { display: flex; align-items: center; gap: 4px; }
+  .editors .panel h2 .open {
+    margin-left: auto;
+    padding: 1px 10px;
+    font-size: 12px;
+    font-weight: normal;
+    flex: none;
+  }
+  .editors .panel h2 .open:hover { border-color: var(--accent); color: var(--accent); }
   .CodeMirror, #output {
     margin: 0;
     padding: 12px;
@@ -466,7 +476,7 @@
 <main>
   <div class="editors">
     <section class="panel">
-      <h2>current.sql <span>- what the database holds now</span></h2>
+      <h2>current.sql <span>- what the database holds now</span><button class="open" data-editor="current" title="Load a file into current.sql">Open…</button></h2>
       <textarea id="current" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
     </section>
     <div class="copy">
@@ -475,10 +485,12 @@
       <button id="swap" title="Swap current.sql and desired.sql" aria-label="Swap current.sql and desired.sql"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4"/></svg></button>
     </div>
     <section class="panel">
-      <h2>desired.sql <span>- what you want it to hold</span></h2>
+      <h2>desired.sql <span>- what you want it to hold</span><button class="open" data-editor="desired" title="Load a file into desired.sql">Open…</button></h2>
       <textarea id="desired" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
     </section>
   </div>
+
+  <input id="open-file" type="file" accept=".sql,text/plain,application/sql" hidden>
 
   <div id="splitter" class="splitter" role="separator" aria-orientation="horizontal" tabindex="0"
        aria-label="Resize the editors and the output" title="Drag to resize. Double-click to reset."></div>
@@ -1006,6 +1018,34 @@
     run();
   });
   $("share").addEventListener("click", share);
+  // Open… loads a local file into its editor, replacing the text as one
+  // undoable edit, and runs the diff.
+  const openFile = $("open-file");
+  let openTarget = null;
+  for (const button of document.querySelectorAll(".open")) {
+    button.addEventListener("click", () => {
+      openTarget = button.dataset.editor === "current" ? current : desired;
+      openFile.value = "";
+      openFile.click();
+    });
+  }
+  openFile.addEventListener("change", async () => {
+    const file = openFile.files[0];
+    if (!file || !openTarget || busy) return;
+    let text;
+    try {
+      text = await file.text();
+    } catch (e) {
+      render(`${file.name}: ${e.message}`, true);
+      status.textContent = "Failed";
+      return;
+    }
+    hideShare();
+    history.replaceState(null, "", "/");
+    replaceText(openTarget, text);
+    openTarget.focus();
+    run();
+  });
   // Empty against empty has no diff to show, so clearing does not run one.
   $("copy-link").addEventListener("click", copyLink);
   shareUrl.addEventListener("focus", () => shareUrl.select());
