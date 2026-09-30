@@ -71,6 +71,11 @@ a link of the form `/p/<id>`. The ID is the start of the SHA-256 of what was
 saved, so the same input always gets the same link. A share is kept with no
 expiry and can be up to 128 KiB.
 
+When pista returns an error, a Report issue button appears next to Fix with
+AI. It saves a share the same way and opens a new issue on
+[winebarrel/pistachio](https://github.com/winebarrel/pistachio/issues) with
+the pista version, the share link and the error filled in.
+
 The KV namespace is the `SHARES` binding in `wrangler.jsonc`. It has no `id`,
 so wrangler creates the namespace on the first deploy. For that, the API token
 also needs Workers KV Storage: Edit.
