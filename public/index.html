@@ -384,8 +384,9 @@
   /* The status sits in the output header so a longer message never wraps
      the controls and pushes the output down. */
   .output-header { display: flex; align-items: center; gap: 12px; }
-  /* Shown with a pista error; asks Workers AI to fix the file. */
-  .ai-fix {
+  /* Shown with a pista error; asks Workers AI to fix the file, or opens a
+     pistachio issue with a share link. */
+  .ai-fix, .report-issue {
     display: inline-flex;
     flex: none;
     align-items: center;
@@ -395,8 +396,9 @@
     font-size: 12px;
     font-weight: 600;
   }
-  .ai-fix[hidden] { display: none; }
+  .ai-fix[hidden], .report-issue[hidden] { display: none; }
   .ai-fix svg { width: 14px; height: 14px; color: var(--accent); }
+  .report-issue svg { width: 14px; height: 14px; fill: currentColor; }
   .run-state {
     display: inline-flex;
     align-items: center;
@@ -547,7 +549,7 @@
   </div>
 
   <section class="panel">
-    <h2 class="output-header">Output <span class="run-state"><span class="spinner" aria-hidden="true"></span><span id="status"></span></span><button id="ai-fix" class="ai-fix" title="Have AI fix the schema file this error is about" hidden><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>Fix with AI</button></h2>
+    <h2 class="output-header">Output <span class="run-state"><span class="spinner" aria-hidden="true"></span><span id="status"></span></span><button id="ai-fix" class="ai-fix" title="Have AI fix the schema file this error is about" hidden><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>Fix with AI</button><button id="report-issue" class="report-issue" title="Open a pistachio issue about this error, with a share link to these schemas" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>Report issue</button></h2>
     <div class="progress" aria-hidden="true"></div>
     <pre id="output" class="cm-s-pista"></pre>
   </section>
@@ -718,27 +720,31 @@
     $("share-result").hidden = true;
   }
 
+  // Saves the inputs, points the address bar at their share link and shows
+  // it. Returns the link; throws with the reason when nothing was saved.
+  async function saveShare() {
+    const res = await fetch("/api/share", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(inputs()),
+    });
+    const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (body.error) throw new Error(body.error);
+    history.replaceState(null, "", `/p/${body.id}`);
+    shareUrl.value = location.href;
+    $("share-result").hidden = false;
+    return location.href;
+  }
+
   async function share() {
     if (busy) return;
     const button = $("share");
     button.disabled = true;
     try {
-      const res = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(inputs()),
-      });
-      const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      if (body.error) {
-        status.textContent = body.error;
-        return;
-      }
-      history.replaceState(null, "", `/p/${body.id}`);
-      shareUrl.value = location.href;
-      $("share-result").hidden = false;
+      await saveShare();
       await copyLink();
     } catch (e) {
-      status.textContent = String(e);
+      status.textContent = e.message;
     } finally {
       button.disabled = busy;
     }
@@ -815,9 +821,51 @@
   function offerFix(error) {
     pistaError = error;
     $("ai-fix").hidden = false;
+    $("report-issue").hidden = false;
   }
   function hideFix() {
     $("ai-fix").hidden = true;
+    $("report-issue").hidden = true;
+  }
+
+  // Saves a share of the inputs and opens a new pistachio issue with the
+  // error, the release and the share link filled in. The tab is opened
+  // before the share is saved, while the click still counts, so a popup
+  // blocker lets it through.
+  async function reportIssue() {
+    if (busy || !pistaError) return;
+    const error = pistaError;
+    const button = $("report-issue");
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
+    button.disabled = true;
+    try {
+      const link = await saveShare();
+      const version = chosenRelease()?.version ?? "latest";
+      const firstLine = error.split("\n").find((line) => line.trim()) ?? "error";
+      const title = `pista ${version}: ${firstLine.trim()}`.slice(0, 120);
+      const body = [
+        `pista version: ${version}`,
+        "",
+        `Share link: ${link}`,
+        "",
+        "Error:",
+        "```",
+        error.replace(/\n$/, ""),
+        "```",
+        "",
+      ].join("\n");
+      const url = new URL("https://github.com/winebarrel/pistachio/issues/new");
+      url.searchParams.set("title", title);
+      url.searchParams.set("body", body);
+      if (tab) tab.location.href = url.href;
+      else window.open(url.href, "_blank", "noopener");
+    } catch (e) {
+      tab?.close();
+      status.textContent = e.message;
+    } finally {
+      button.disabled = busy;
+    }
   }
 
   // Sends both files and the pista error to Workers AI, puts the file it
@@ -907,6 +955,7 @@
   $("format").addEventListener("click", format);
   $("ai-example").addEventListener("click", aiExample);
   $("ai-fix").addEventListener("click", aiFix);
+  $("report-issue").addEventListener("click", reportIssue);
 
   // Shows the text diff of the two editors, as `diff -u current.sql
   // desired.sql` would print it, one colored line at a time.
