@@ -1,11 +1,12 @@
 // Command server is the HTTP front of the demo container. It takes two schema
 // files in a JSON request and runs pista on them: `pista diff` for the DDL
-// that takes one to the other, and `pista fmt` to format both. No database is
-// involved.
+// that takes one to the other, `pista fmt` to format both, and `pista lint` to
+// check both against the standard rules. No database is involved.
 //
 // The image holds several pista releases, named in PISTA_VERSIONS newest
 // first and installed as pista-<version> in PISTA_BIN_DIR. A request picks
-// one by version; without one it gets the newest.
+// one by version; without one it gets the newest. The standard lint rules of
+// each release are in PISTA_RULES_DIR/<version>.
 package main
 
 import (
@@ -57,6 +58,17 @@ type fmtRequest struct {
 	Desired string `json:"desired"`
 }
 
+type lintRequest = fmtRequest
+
+// Output holds one line per object that breaks a rule, and is empty when
+// none does. Warnings holds what pista writes to standard error, such as a
+// -- pista:lint-ignore that names no rule.
+type lintResponse struct {
+	Output   string `json:"output,omitempty"`
+	Warnings string `json:"warnings,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
 // A failed format carries only Error, so the page can tell it apart from two
 // schemas that format to empty text.
 type fmtResponse struct {
@@ -74,15 +86,20 @@ type release struct {
 	Options []string `json:"options"`
 }
 
+// lintOption is listed in a release's options when the image has its
+// standard lint rules.
+const lintOption = "lint"
+
 // releases are the pista binaries in the image, newest first.
 type releases struct {
 	dir      string
+	rulesDir string
 	versions []string
 	options  func() ([]release, error)
 }
 
-func newReleases(dir string, versions []string) *releases {
-	r := &releases{dir: dir, versions: versions}
+func newReleases(dir, rulesDir string, versions []string) *releases {
+	r := &releases{dir: dir, rulesDir: rulesDir, versions: versions}
 	// Which options each release has cannot change while the server runs, so
 	// it is read from their help once.
 	r.options = sync.OnceValues(func() ([]release, error) {
@@ -98,6 +115,9 @@ func newReleases(dir string, versions []string) *releases {
 					rel.Options = append(rel.Options, opt)
 				}
 			}
+			if _, err := os.Stat(r.rules(v)); err == nil {
+				rel.Options = append(rel.Options, lintOption)
+			}
 			list = append(list, rel)
 		}
 		return list, nil
@@ -109,15 +129,29 @@ func (r *releases) bin(version string) string {
 	return filepath.Join(r.dir, "pista-"+version)
 }
 
-// resolve returns the binary for version, the newest when version is empty.
-func (r *releases) resolve(version string) (string, error) {
+// rules returns the directory of the standard lint rules of version.
+func (r *releases) rules(version string) string {
+	return filepath.Join(r.rulesDir, version)
+}
+
+// resolveVersion returns version, or the newest when it is empty.
+func (r *releases) resolveVersion(version string) (string, error) {
 	if version == "" {
-		return r.bin(r.versions[0]), nil
+		return r.versions[0], nil
 	}
 	if slices.Contains(r.versions, version) {
-		return r.bin(version), nil
+		return version, nil
 	}
 	return "", errors.New("pista " + version + " is not available here; choose one of " + strings.Join(r.versions, ", "))
+}
+
+// resolve returns the binary for version, the newest when version is empty.
+func (r *releases) resolve(version string) (string, error) {
+	v, err := r.resolveVersion(version)
+	if err != nil {
+		return "", err
+	}
+	return r.bin(v), nil
 }
 
 func main() {
@@ -129,7 +163,11 @@ func main() {
 	if dir == "" {
 		dir = "/usr/local/bin"
 	}
-	rels := newReleases(dir, versions)
+	rulesDir := os.Getenv("PISTA_RULES_DIR")
+	if rulesDir == "" {
+		rulesDir = "/usr/local/share/pista/rules"
+	}
+	rels := newReleases(dir, rulesDir, versions)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -179,6 +217,29 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, res)
 	})
+	mux.HandleFunc("POST /api/lint", func(w http.ResponseWriter, r *http.Request) {
+		var req lintRequest
+		if !decode(w, r, &req) {
+			return
+		}
+		v, err := rels.resolveVersion(req.Version)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, lintResponse{Error: err.Error()})
+			return
+		}
+		rules := rels.rules(v)
+		if _, err := os.Stat(rules); err != nil {
+			writeJSON(w, http.StatusBadRequest, lintResponse{Error: "pista " + v + " has no lint rules here"})
+			return
+		}
+
+		res, err := runLint(r.Context(), rels.bin(v), rules, &req)
+		if err != nil {
+			writeJSON(w, http.StatusOK, lintResponse{Error: err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
+	})
 
 	addr := ":8080"
 	log.Printf("listening on %s with pista %s", addr, strings.Join(versions, ", "))
@@ -219,6 +280,13 @@ func withSchemas(current, desired string, fn func(dir string) error) error {
 // carries pista's stderr. The files are passed by name relative to dir, so
 // messages name them as the page does.
 func runPista(ctx context.Context, pista, dir string, args ...string) (string, error) {
+	stdout, _, err := execPista(ctx, pista, dir, args...)
+	return stdout, err
+}
+
+// execPista is runPista that also returns stderr, and on failure an error
+// that wraps the *exec.ExitError, so a caller can read the exit status.
+func execPista(ctx context.Context, pista, dir string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 
@@ -235,16 +303,53 @@ func runPista(ctx context.Context, pista, dir string, args ...string) (string, e
 
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", errors.New("pista " + args[0] + " timed out")
+			return "", "", errors.New("pista " + args[0] + " timed out")
 		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", errors.New(msg)
+		return stdout.String(), stderr.String(), &pistaError{msg: msg, err: err}
 	}
 
-	return stdout.String(), nil
+	return stdout.String(), stderr.String(), nil
+}
+
+// pistaError carries pista's message and the error the run returned.
+type pistaError struct {
+	msg string
+	err error
+}
+
+func (e *pistaError) Error() string { return e.msg }
+func (e *pistaError) Unwrap() error { return e.err }
+
+// lintViolations is the exit status of `pista lint` when an object breaks a
+// rule. The violations are on stdout then.
+const lintViolations = 2
+
+// runLint checks each schema against the rules in rules. pista lint reads
+// the files it is given as one schema, and the two files hold the same
+// objects, so each is checked in a run of its own. A violation is not an
+// error: it is returned in Output.
+func runLint(ctx context.Context, pista, rules string, req *lintRequest) (*lintResponse, error) {
+	var res lintResponse
+	err := withSchemas(req.Current, req.Desired, func(dir string) error {
+		for _, file := range []string{currentFile, desiredFile} {
+			stdout, stderr, err := execPista(ctx, pista, dir, "lint", "--rules="+rules, "--", file)
+			var exitErr *exec.ExitError
+			if err != nil && (!errors.As(err, &exitErr) || exitErr.ExitCode() != lintViolations) {
+				return err
+			}
+			res.Output += stdout
+			res.Warnings += stderr
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 func runDiff(ctx context.Context, pista string, req *diffRequest) (string, error) {
