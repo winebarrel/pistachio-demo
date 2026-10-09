@@ -501,6 +501,7 @@
     <div class="actions">
       <button id="run" class="primary" title="Run pista diff (Ctrl+Enter / Cmd+Enter)">Run pista diff</button>
       <button id="format" title="Format both editors with pista fmt">Format</button>
+      <button id="lint" title="Check each editor with pista lint and the standard rules of pistachio">Lint</button>
       <button id="show-diff" title="Show the unified diff of current.sql and desired.sql">Unified diff</button>
     </div>
     <div class="actions">
@@ -643,6 +644,12 @@
       label.classList.toggle("unsupported", !ok);
       label.title = ok ? label.dataset.title : `${label.dataset.title} (not in pista ${release.version})`;
     }
+    const lintButton = $("lint");
+    lintButton.dataset.title ??= lintButton.title;
+    lintButton.disabled = busy || !supports("lint");
+    lintButton.title = supports("lint")
+      ? lintButton.dataset.title
+      : `${lintButton.dataset.title} (not in pista ${release.version})`;
     const link = $("version");
     if (release) {
       link.textContent = `pista ${release.version}`;
@@ -951,8 +958,31 @@
 
 
 
+  // Checks each editor with pista lint and the standard rules in rules/ of
+  // the chosen release. A violation is shown as output, not as an error; a
+  // file pista cannot read is an error, as it is for a diff.
+  async function lint() {
+    if (busy || !supports("lint")) return;
+    const { version, current: c, desired: d } = inputs();
+    const answer = await callPista("/api/lint", { version, current: c, desired: d }, "Linting");
+    if (!answer) return;
+    if (answer.error) {
+      render(answer.error, true);
+      offerFix(answer.error);
+      status.textContent = "Lint failed";
+      return;
+    }
+    const lines = (answer.output ?? "").split("\n").filter((line) => line);
+    const text = [...lines, ...(answer.warnings ?? "").split("\n").filter((line) => line)].join("\n");
+    output.className = "";
+    output.textContent = text || "No object breaks a rule.";
+    const count = lines.length === 1 ? "1 violation" : `${lines.length} violations`;
+    status.textContent = `Lint: ${count} in ${answer.elapsed} ms`;
+  }
+
   runButton.addEventListener("click", run);
   $("format").addEventListener("click", format);
+  $("lint").addEventListener("click", lint);
   $("ai-example").addEventListener("click", aiExample);
   $("ai-fix").addEventListener("click", aiFix);
   $("report-issue").addEventListener("click", reportIssue);

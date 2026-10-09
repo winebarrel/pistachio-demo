@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 #
 # Container image for the playground: pista release binaries plus a small
-# HTTP server that runs `pista diff` and `pista fmt` on the two schemas a
-# request sends.
+# HTTP server that runs `pista diff`, `pista fmt` and `pista lint` on the two
+# schemas a request sends.
 
 # The pista releases the playground offers, newest first. The first is the
 # default. The Update pista workflow rewrites this line.
@@ -14,7 +14,10 @@ COPY server/ /src/
 RUN CGO_ENABLED=0 go build -o /out/server .
 
 # Each release is checked against its checksums.txt and installed as
-# pista-<version>.
+# pista-<version>. The standard lint rules are not in the release archive, so
+# they are taken from the source archive of the release tag and installed in
+# rules/<version>. The rule format changes between releases, so each release
+# gets the rules of its own tag.
 FROM golang:1.27 AS pista
 ARG PISTA_VERSIONS
 ARG TARGETARCH=amd64
@@ -29,6 +32,9 @@ RUN set -eu; \
       sha256sum --check --ignore-missing checksums.txt; \
       tar xzf "$tarball" pista; \
       mv pista "/out/pista-$v"; \
+      curl -fsSL "https://github.com/winebarrel/pistachio/archive/refs/tags/v$v.tar.gz" -o source.tar.gz; \
+      mkdir -p "/rules/$v"; \
+      tar xzf source.tar.gz -C "/rules/$v" --strip-components=2 --wildcards '*/rules/*.yml'; \
     done
 
 # The runtime image is as close to read-only as Cloudflare Containers allows;
@@ -43,6 +49,7 @@ FROM gcr.io/distroless/base-debian13:nonroot
 ARG PISTA_VERSIONS
 ENV PISTA_VERSIONS=${PISTA_VERSIONS}
 COPY --from=pista --chown=0:0 --chmod=0555 /out/ /usr/local/bin/
+COPY --from=pista --chown=0:0 --chmod=0555 /rules/ /usr/local/share/pista/rules/
 COPY --from=build --chown=0:0 --chmod=0555 /out/server /usr/local/bin/server
 USER 65532:65532
 EXPOSE 8080

@@ -16,9 +16,13 @@ that runs `pista`:
   any request.
 - `server/` is the HTTP server inside the container. `POST /api/diff` writes
   the two schemas to a temporary directory and runs `pista diff` on them.
+  `POST /api/fmt` and `POST /api/lint` run `pista fmt` and `pista lint` the
+  same way.
 - `Dockerfile` puts the pista release binaries and the server into one image.
   `PISTA_VERSIONS` names the releases, newest first; each is installed as
-  `pista-<version>`.
+  `pista-<version>`. The standard lint rules of each release, from `rules/`
+  in the source archive of its tag, are installed in
+  `/usr/local/share/pista/rules/<version>`.
   The runtime image is distroless (no shell or package manager), every file
   it adds is read-only, and the server runs as an unprivileged user that can
   write only the temporary directories.
@@ -107,6 +111,19 @@ day (UTC), counted in the `USAGE` KV namespace. The daily cap bounds what
 Workers AI costs. KV is not atomic, so requests at the same moment can go
 slightly over it.
 
+## Lint
+
+The Lint button checks current.sql and desired.sql with `pista lint` and
+the [standard rules](https://github.com/winebarrel/pistachio/tree/main/rules)
+of the chosen release, unchanged. Each file is checked in a run of its own,
+since `pista lint` reads the files it is given as one schema and the two
+files define the same objects. The output has one line for each object that
+breaks a rule. `-- pista:lint-ignore` in a file works as it does anywhere
+else.
+
+The release archives do not hold the rules, so the image takes them from the
+source archive of each release tag. That archive is not in `checksums.txt`.
+
 ## Star count
 
 The GitHub link in the header shows the star count of winebarrel/pistachio.
@@ -167,6 +184,14 @@ have is answered with 400.
 `GET /api/versions` returns the releases in the image, newest first, each
 with the `pista diff` options it has:
 `{"versions": [{"version": "1.66.0", "options": ["manage-routine", ...]}]}`.
+
+`POST /api/lint` takes `{"version": "...", "current": "...", "desired": "..."}`
+and returns `{"output": "...", "warnings": "..."}`. `output` has one line for
+each object that breaks a rule, and is left out when none does. `warnings` is
+what `pista lint` wrote to standard error, such as a `-- pista:lint-ignore`
+that names no rule. When either file fails to parse it returns
+`{"error": "..."}`. A release whose rules the image lacks has no `lint` in its
+`options` in `/api/versions`, and `/api/lint` answers 400 for it.
 
 `POST /api/fmt` takes `{"version": "...", "current": "...", "desired": "..."}`,
 formats both with `pista fmt`, and returns them in the same shape. When either
