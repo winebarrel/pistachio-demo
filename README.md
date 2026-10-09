@@ -26,8 +26,8 @@ that runs `pista`:
 ## Requirements
 
 - A Cloudflare account on the Workers Paid plan (Containers need it)
-- Docker, for wrangler to build the container image
-- Node.js
+- Docker, to build the container image
+- Node.js 22 or later
 
 ## Run locally
 
@@ -46,6 +46,12 @@ npm run typecheck  # tsc
 npm run build      # bundle the Worker and build the container image, without deploying
 ```
 
+The project is built and deployed with [cf](https://github.com/cloudflare/cf),
+the Cloudflare CLI (in beta). `cloudflare.config.ts` defines the Worker, its
+bindings and the container; `wrangler.config.ts` holds what cf passes to
+Wrangler, which it still uses to bundle the Worker. `npm run typecheck`
+generates the `Env` type from `cloudflare.config.ts` into `.cloudflare/types`.
+
 The Go server is checked with golangci-lint, using `.golangci.yml` at the
 root. CI runs all of these on each pull request.
 
@@ -58,7 +64,7 @@ settings:
 - `CLOUDFLARE_API_TOKEN` (secret): an API token that can edit Workers scripts
   and Containers on that account
 
-To deploy from your machine instead, run `npx wrangler login`, then:
+To deploy from your machine instead, run `npx cf auth login`, then:
 
 ```sh
 npm run deploy
@@ -76,8 +82,9 @@ AI. It saves a share the same way and opens a new issue on
 [winebarrel/pistachio](https://github.com/winebarrel/pistachio/issues) with
 the pista version, the share link and the error filled in.
 
-The KV namespace is the `SHARES` binding in `wrangler.jsonc`. It has no `id`,
-so wrangler creates the namespace on the first deploy. For that, the API token
+The KV namespace is the `SHARES` binding in `cloudflare.config.ts`. It has no
+`id`, so `cf deploy` creates the namespace on the first deploy and reuses it
+after that. For that, the API token
 also needs Workers KV Storage: Edit.
 
 ## AI examples and fixes
@@ -112,7 +119,8 @@ Set a token as a Worker secret to avoid that. A fine-grained personal access
 token with no permissions is enough, since it only reads a public repository:
 
 ```sh
-npx wrangler secret put GITHUB_TOKEN
+npx cf workers secrets update GITHUB_TOKEN --worker pistachio-demo \
+  --type secret_text --text "$GITHUB_TOKEN"
 ```
 
 The secret stays across deploys, so this is needed once.

@@ -1,7 +1,7 @@
 import { Container, getRandom } from "@cloudflare/containers";
 
 // Number of container instances requests are spread over. Keep it at or
-// below max_instances in wrangler.jsonc.
+// below maxInstances in cloudflare.config.ts.
 const INSTANCES = 3;
 
 // Largest share the Worker stores, as the JSON body it receives.
@@ -114,7 +114,11 @@ async function forwardToContainer(
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const body = hasBody ? await request.arrayBuffer() : null;
   for (let attempt = 0; ; attempt++) {
-    const container = await getRandom(env.PISTA, INSTANCES);
+    // A binding that names its Worker as a string is typed without the class.
+    const container = await getRandom(
+      env.PISTA as DurableObjectNamespace<PistaContainer>,
+      INSTANCES,
+    );
     const res = await container.fetch(new Request(request, { body }));
     if (res.status < 500 || attempt === RETRY_DELAYS_MS.length) return res;
     console.warn(
@@ -355,7 +359,7 @@ const REPO = "winebarrel/pistachio";
 const STARS_TTL_SECONDS = 3600;
 const STARS_CACHE_KEY = `https://stars.cache.internal/${REPO}`;
 
-// GITHUB_TOKEN is an optional secret (wrangler secret put GITHUB_TOKEN).
+// GITHUB_TOKEN is an optional secret (cf workers secrets update GITHUB_TOKEN).
 // Without it GitHub allows 60 requests an hour per IP address, and Workers
 // share their outgoing addresses, so the count may often be unavailable.
 async function stars(
