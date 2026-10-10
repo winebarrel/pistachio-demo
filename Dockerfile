@@ -6,7 +6,7 @@
 
 # The pista releases the playground offers, newest first. The first is the
 # default. The Update pista workflow rewrites this line.
-ARG PISTA_VERSIONS="1.80.1 1.80.0 1.79.1"
+ARG PISTA_VERSIONS="1.81.0 1.80.1 1.80.0"
 
 FROM golang:1.27 AS build
 WORKDIR /src
