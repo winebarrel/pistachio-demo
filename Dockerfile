@@ -14,7 +14,7 @@ COPY server/ /src/
 RUN CGO_ENABLED=0 go build -o /out/server .
 
 # Each release is checked against its checksums.txt and installed as
-# pista-<version>. The standard lint rules are not in the release archive, so
+# pista-<version>. The lint rules are not in the release archive, so
 # they are taken from the source archive of the release tag and installed in
 # rules/<version>. The rule format changes between releases, so each release
 # gets the rules of its own tag.

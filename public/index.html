@@ -501,7 +501,7 @@
     <div class="actions">
       <button id="run" class="primary" title="Run pista diff (Ctrl+Enter / Cmd+Enter)">Run pista diff</button>
       <button id="format" title="Format both editors with pista fmt">Format</button>
-      <button id="lint" title="Check each editor with pista lint and the standard rules of pistachio">Lint</button>
+      <button id="lint" title="Check each editor with pista lint and the chosen rule set of pistachio">Lint</button>
       <button id="show-diff" title="Show the unified diff of current.sql and desired.sql">Unified diff</button>
     </div>
     <div class="actions">
@@ -537,6 +537,9 @@
         <option value="policy">policy</option>
         <option value="trigger">trigger</option>
       </select>
+    </label>
+    <label id="lint-rules" title="The rule set Lint checks against" hidden>lint rules
+      <select id="rule-set"></select>
     </label>
     <span class="hint">Ctrl+Enter runs the diff. Ctrl+/ comments lines. (Cmd on a Mac)</span>
   </fieldset>
@@ -624,12 +627,31 @@
 
   // What a run reads, and what a share saves.
   // The pista releases the container offers, newest first, each with the
-  // options it has: [{ version, options: ["explain", ...] }]. Empty until
+  // options and lint rule sets it has:
+  // [{ version, options: ["explain", ...], rule_sets: ["gitlab", "pgwiki"] }]. Empty until
   // /api/versions answers; the server then runs its newest release.
   let releases = [];
   const chosenRelease = () => releases.find((r) => r.version === $("pista-version").value) ?? releases[0];
   // Before the list arrives every option counts as supported.
   const supports = (option) => !chosenRelease() || chosenRelease().options.includes(option);
+
+  // The rule set the user chose. It is kept when another release is chosen,
+  // and pgwiki, the set the rules were before they were split, is the first.
+  let ruleSet = "pgwiki";
+
+  // Lists the rule sets of the chosen release, choosing ruleSet when the
+  // release has it.
+  function renderRuleSets(release) {
+    const select = $("rule-set");
+    const sets = release?.rule_sets ?? [];
+    if (select.dataset.sets !== sets.join(",")) {
+      select.dataset.sets = sets.join(",");
+      select.textContent = "";
+      for (const name of sets) select.add(new Option(name, name));
+    }
+    if (sets.includes(ruleSet)) select.value = ruleSet;
+    $("lint-rules").hidden = sets.length === 0;
+  }
 
   // Greys out the options the chosen release lacks, and shows its version
   // next to the title.
@@ -644,6 +666,7 @@
       label.classList.toggle("unsupported", !ok);
       label.title = ok ? label.dataset.title : `${label.dataset.title} (not in pista ${release.version})`;
     }
+    renderRuleSets(release);
     const lintButton = $("lint");
     lintButton.dataset.title ??= lintButton.title;
     lintButton.disabled = busy || !supports("lint");
@@ -667,6 +690,9 @@
       releases = body.versions.filter(
         (r) => typeof r.version === "string" && /^[0-9A-Za-z.+-]+$/.test(r.version) && Array.isArray(r.options),
       );
+      for (const r of releases) {
+        r.rule_sets = Array.isArray(r.rule_sets) ? r.rule_sets.filter((n) => typeof n === "string") : [];
+      }
       const select = $("pista-version");
       select.textContent = "";
       releases.forEach((r, i) => select.add(new Option(i === 0 ? `${r.version} (latest)` : r.version, r.version)));
@@ -958,13 +984,15 @@
 
 
 
-  // Checks each editor with pista lint and the standard rules in rules/ of
-  // the chosen release. A violation is shown as output, not as an error; a
+  // Checks each editor with pista lint and the chosen set of the rules in
+  // rules/ of the chosen release. A violation is shown as output, not as an error; a
   // file pista cannot read is an error, as it is for a diff.
   async function lint() {
     if (busy || !supports("lint")) return;
     const { version, current: c, desired: d } = inputs();
-    const answer = await callPista("/api/lint", { version, current: c, desired: d }, "Linting");
+    // Before the list arrives no set is chosen, and the server uses every set.
+    const rule_set = $("rule-set").value;
+    const answer = await callPista("/api/lint", { version, current: c, desired: d, rule_set }, "Linting");
     if (!answer) return;
     if (answer.error) {
       render(answer.error, true);
@@ -983,6 +1011,9 @@
   runButton.addEventListener("click", run);
   $("format").addEventListener("click", format);
   $("lint").addEventListener("click", lint);
+  $("rule-set").addEventListener("change", (e) => {
+    ruleSet = e.target.value;
+  });
   $("ai-example").addEventListener("click", aiExample);
   $("ai-fix").addEventListener("click", aiFix);
   $("report-issue").addEventListener("click", reportIssue);

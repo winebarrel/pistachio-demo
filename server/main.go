@@ -1,12 +1,12 @@
 // Command server is the HTTP front of the demo container. It takes two schema
 // files in a JSON request and runs pista on them: `pista diff` for the DDL
 // that takes one to the other, `pista fmt` to format both, and `pista lint` to
-// check both against the standard rules. No database is involved.
+// check both against the lint rules of pistachio. No database is involved.
 //
 // The image holds several pista releases, named in PISTA_VERSIONS newest
 // first and installed as pista-<version> in PISTA_BIN_DIR. A request picks
-// one by version; without one it gets the newest. The standard lint rules of
-// each release are in PISTA_RULES_DIR/<version>.
+// one by version; without one it gets the newest. The lint rules of each
+// release are in PISTA_RULES_DIR/<version>, one directory per rule set.
 package main
 
 import (
@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -58,7 +59,14 @@ type fmtRequest struct {
 	Desired string `json:"desired"`
 }
 
-type lintRequest = fmtRequest
+// RuleSet names the rule set to check against. Without it every set of the
+// release is used.
+type lintRequest struct {
+	Version string `json:"version"`
+	Current string `json:"current"`
+	Desired string `json:"desired"`
+	RuleSet string `json:"rule_set"`
+}
 
 // Output holds one line per object that breaks a rule, and is empty when
 // none does. Warnings holds what pista writes to standard error, such as a
@@ -81,13 +89,16 @@ type fmtResponse struct {
 // older than a flag does not list it in its help.
 var diffOptions = []string{"manage-routine", "bulk-alter", "explain", "allow-drop"}
 
+// RuleSets lists the lint rule sets of the release, such as pgwiki and
+// gitlab, in name order.
 type release struct {
-	Version string   `json:"version"`
-	Options []string `json:"options"`
+	Version  string   `json:"version"`
+	Options  []string `json:"options"`
+	RuleSets []string `json:"rule_sets"`
 }
 
-// lintOption is listed in a release's options when the image has its
-// standard lint rules.
+// lintOption is listed in a release's options when the image has at least
+// one set of its lint rules.
 const lintOption = "lint"
 
 // releases are the pista binaries in the image, newest first.
@@ -109,13 +120,17 @@ func newReleases(dir, rulesDir string, versions []string) *releases {
 			if err != nil {
 				return nil, err
 			}
-			rel := release{Version: v, Options: []string{}}
+			sets, err := r.ruleSets(v)
+			if err != nil {
+				return nil, err
+			}
+			rel := release{Version: v, Options: []string{}, RuleSets: sets}
 			for _, opt := range diffOptions {
 				if strings.Contains(help, "--"+opt) {
 					rel.Options = append(rel.Options, opt)
 				}
 			}
-			if _, err := os.Stat(r.rules(v)); err == nil {
+			if len(sets) > 0 {
 				rel.Options = append(rel.Options, lintOption)
 			}
 			list = append(list, rel)
@@ -129,9 +144,53 @@ func (r *releases) bin(version string) string {
 	return filepath.Join(r.dir, "pista-"+version)
 }
 
-// rules returns the directory of the standard lint rules of version.
+// rules returns the directory of the lint rules of version.
 func (r *releases) rules(version string) string {
 	return filepath.Join(r.rulesDir, version)
+}
+
+// ruleSets returns the names of the rule sets of version: the
+// subdirectories of its rules directory. pista lint does not read
+// subdirectories, so each set is passed to it with --rules of its own.
+func (r *releases) ruleSets(version string) ([]string, error) {
+	entries, err := os.ReadDir(r.rules(version))
+	if errors.Is(err, fs.ErrNotExist) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	sets := []string{}
+	for _, e := range entries {
+		if e.IsDir() {
+			sets = append(sets, e.Name())
+		}
+	}
+	return sets, nil
+}
+
+// rulePaths returns the directory of the rule set name, or of every set of
+// version when name is empty. A name that is not a set of version is an
+// error.
+func (r *releases) rulePaths(version, name string) ([]string, error) {
+	sets, err := r.ruleSets(version)
+	if err != nil {
+		return nil, err
+	}
+	if len(sets) == 0 {
+		return nil, errors.New("pista " + version + " has no lint rules here")
+	}
+	if name != "" {
+		if !slices.Contains(sets, name) {
+			return nil, errors.New("pista " + version + " has no rule set " + name + "; choose one of " + strings.Join(sets, ", "))
+		}
+		sets = []string{name}
+	}
+	paths := make([]string, len(sets))
+	for i, set := range sets {
+		paths[i] = filepath.Join(r.rules(version), set)
+	}
+	return paths, nil
 }
 
 // resolveVersion returns version, or the newest when it is empty.
@@ -227,9 +286,9 @@ func main() {
 			writeJSON(w, http.StatusBadRequest, lintResponse{Error: err.Error()})
 			return
 		}
-		rules := rels.rules(v)
-		if _, err := os.Stat(rules); err != nil {
-			writeJSON(w, http.StatusBadRequest, lintResponse{Error: "pista " + v + " has no lint rules here"})
+		rules, err := rels.rulePaths(v, req.RuleSet)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, lintResponse{Error: err.Error()})
 			return
 		}
 
@@ -328,15 +387,20 @@ func (e *pistaError) Unwrap() error { return e.err }
 // rule. The violations are on stdout then.
 const lintViolations = 2
 
-// runLint checks each schema against the rules in rules. pista lint reads
+// runLint checks each schema against the rules in the paths in rules. pista lint reads
 // the files it is given as one schema, and the two files hold the same
 // objects, so each is checked in a run of its own. A violation is not an
 // error: it is returned in Output.
-func runLint(ctx context.Context, pista, rules string, req *lintRequest) (*lintResponse, error) {
+func runLint(ctx context.Context, pista string, rules []string, req *lintRequest) (*lintResponse, error) {
 	var res lintResponse
 	err := withSchemas(req.Current, req.Desired, func(dir string) error {
 		for _, file := range []string{currentFile, desiredFile} {
-			stdout, stderr, err := execPista(ctx, pista, dir, "lint", "--rules="+rules, "--", file)
+			args := []string{"lint"}
+			for _, path := range rules {
+				args = append(args, "--rules="+path)
+			}
+			args = append(args, "--", file)
+			stdout, stderr, err := execPista(ctx, pista, dir, args...)
 			var exitErr *exec.ExitError
 			if err != nil && (!errors.As(err, &exitErr) || exitErr.ExitCode() != lintViolations) {
 				return err
