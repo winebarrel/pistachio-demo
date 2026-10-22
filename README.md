@@ -22,7 +22,8 @@ that runs `pista`:
   `PISTA_VERSIONS` names the releases, newest first; each is installed as
   `pista-<version>`. The standard lint rules of each release, from `rules/`
   in the source archive of its tag, are installed in
-  `/usr/local/share/pista/rules/<version>`.
+  `/usr/local/share/pista/rules/<version>`. The server passes each
+  subdirectory there, one per rule set, to `pista lint` with `--rules`.
   The runtime image is distroless (no shell or package manager), every file
   it adds is read-only, and the server runs as an unprivileged user that can
   write only the temporary directories.
@@ -115,7 +116,8 @@ slightly over it.
 
 The Lint button checks current.sql and desired.sql with `pista lint` and
 the [standard rules](https://github.com/winebarrel/pistachio/tree/main/rules)
-of the chosen release, unchanged. Each file is checked in a run of its own,
+of the chosen release, unchanged: every set in `rules/`, `pgwiki/` and
+`gitlab/`, at once. Each file is checked in a run of its own,
 since `pista lint` reads the files it is given as one schema and the two
 files define the same objects. The output has one line for each object that
 breaks a rule. `-- pista:lint-ignore` in a file works as it does anywhere

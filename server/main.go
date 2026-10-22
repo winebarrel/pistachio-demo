@@ -134,6 +134,28 @@ func (r *releases) rules(version string) string {
 	return filepath.Join(r.rulesDir, version)
 }
 
+// rulePaths returns what to pass to pista lint as --rules for version.
+// pista lint does not read subdirectories, and since 1.88.1 the standard
+// rules are split into a directory per set, so each subdirectory is passed
+// on its own. An older release keeps its rules in the directory itself.
+func (r *releases) rulePaths(version string) ([]string, error) {
+	dir := r.rules(version)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, e := range entries {
+		if e.IsDir() {
+			paths = append(paths, filepath.Join(dir, e.Name()))
+		}
+	}
+	if len(paths) == 0 {
+		paths = []string{dir}
+	}
+	return paths, nil
+}
+
 // resolveVersion returns version, or the newest when it is empty.
 func (r *releases) resolveVersion(version string) (string, error) {
 	if version == "" {
@@ -227,8 +249,8 @@ func main() {
 			writeJSON(w, http.StatusBadRequest, lintResponse{Error: err.Error()})
 			return
 		}
-		rules := rels.rules(v)
-		if _, err := os.Stat(rules); err != nil {
+		rules, err := rels.rulePaths(v)
+		if err != nil {
 			writeJSON(w, http.StatusBadRequest, lintResponse{Error: "pista " + v + " has no lint rules here"})
 			return
 		}
@@ -328,15 +350,20 @@ func (e *pistaError) Unwrap() error { return e.err }
 // rule. The violations are on stdout then.
 const lintViolations = 2
 
-// runLint checks each schema against the rules in rules. pista lint reads
+// runLint checks each schema against the rules in the paths in rules. pista lint reads
 // the files it is given as one schema, and the two files hold the same
 // objects, so each is checked in a run of its own. A violation is not an
 // error: it is returned in Output.
-func runLint(ctx context.Context, pista, rules string, req *lintRequest) (*lintResponse, error) {
+func runLint(ctx context.Context, pista string, rules []string, req *lintRequest) (*lintResponse, error) {
 	var res lintResponse
 	err := withSchemas(req.Current, req.Desired, func(dir string) error {
 		for _, file := range []string{currentFile, desiredFile} {
-			stdout, stderr, err := execPista(ctx, pista, dir, "lint", "--rules="+rules, "--", file)
+			args := []string{"lint"}
+			for _, path := range rules {
+				args = append(args, "--rules="+path)
+			}
+			args = append(args, "--", file)
+			stdout, stderr, err := execPista(ctx, pista, dir, args...)
 			var exitErr *exec.ExitError
 			if err != nil && (!errors.As(err, &exitErr) || exitErr.ExitCode() != lintViolations) {
 				return err
