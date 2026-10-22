@@ -22,8 +22,8 @@ that runs `pista`:
   `PISTA_VERSIONS` names the releases, newest first; each is installed as
   `pista-<version>`. The standard lint rules of each release, from `rules/`
   in the source archive of its tag, are installed in
-  `/usr/local/share/pista/rules/<version>`. The server passes each
-  subdirectory there, one per rule set, to `pista lint` with `--rules`.
+  `/usr/local/share/pista/rules/<version>`, one subdirectory per rule
+  set. The server passes the chosen set to `pista lint` with `--rules`.
   The runtime image is distroless (no shell or package manager), every file
   it adds is read-only, and the server runs as an unprivileged user that can
   write only the temporary directories.
@@ -116,8 +116,9 @@ slightly over it.
 
 The Lint button checks current.sql and desired.sql with `pista lint` and
 the [standard rules](https://github.com/winebarrel/pistachio/tree/main/rules)
-of the chosen release, unchanged: every set in `rules/`, `pgwiki/` and
-`gitlab/`, at once. Each file is checked in a run of its own,
+of the chosen release, unchanged. Each directory in `rules/`, such as
+`pgwiki/` and `gitlab/`, is a rule set, and lint rules in the options
+chooses the one to use. It is `pgwiki` at first. Each file is checked in a run of its own,
 since `pista lint` reads the files it is given as one schema and the two
 files define the same objects. The output has one line for each object that
 breaks a rule. `-- pista:lint-ignore` in a file works as it does anywhere
@@ -184,16 +185,20 @@ Without `version` it runs the newest release; a version the image does not
 have is answered with 400.
 
 `GET /api/versions` returns the releases in the image, newest first, each
-with the `pista diff` options it has:
-`{"versions": [{"version": "1.66.0", "options": ["manage-routine", ...]}]}`.
+with the `pista diff` options and the lint rule sets it has:
+`{"versions": [{"version": "1.66.0", "options": ["manage-routine", ...], "rule_sets": ["gitlab", "pgwiki"]}]}`.
 
-`POST /api/lint` takes `{"version": "...", "current": "...", "desired": "..."}`
+`POST /api/lint` takes
+`{"version": "...", "current": "...", "desired": "...", "rule_set": "pgwiki"}`
 and returns `{"output": "...", "warnings": "..."}`. `output` has one line for
 each object that breaks a rule, and is left out when none does. `warnings` is
 what `pista lint` wrote to standard error, such as a `-- pista:lint-ignore`
 that names no rule. When either file fails to parse it returns
 `{"error": "..."}`. A release whose rules the image lacks has no `lint` in its
 `options` in `/api/versions`, and `/api/lint` answers 400 for it.
+`rule_set` names the rule set to use, one of `rule_sets` in `/api/versions`.
+Without it every set of the release is used. A name the release does not
+have is answered with 400.
 
 `POST /api/fmt` takes `{"version": "...", "current": "...", "desired": "..."}`,
 formats both with `pista fmt`, and returns them in the same shape. When either
