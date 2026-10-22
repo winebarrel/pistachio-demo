@@ -1,12 +1,12 @@
 // Command server is the HTTP front of the demo container. It takes two schema
 // files in a JSON request and runs pista on them: `pista diff` for the DDL
 // that takes one to the other, `pista fmt` to format both, and `pista lint` to
-// check both against the standard rules. No database is involved.
+// check both against the lint rules of pistachio. No database is involved.
 //
 // The image holds several pista releases, named in PISTA_VERSIONS newest
 // first and installed as pista-<version> in PISTA_BIN_DIR. A request picks
-// one by version; without one it gets the newest. The standard lint rules of
-// each release are in PISTA_RULES_DIR/<version>, one directory per rule set.
+// one by version; without one it gets the newest. The lint rules of each
+// release are in PISTA_RULES_DIR/<version>, one directory per rule set.
 package main
 
 import (
@@ -89,8 +89,8 @@ type fmtResponse struct {
 // older than a flag does not list it in its help.
 var diffOptions = []string{"manage-routine", "bulk-alter", "explain", "allow-drop"}
 
-// RuleSets lists the rule sets of the standard lint rules, such as pgwiki
-// and gitlab, in name order.
+// RuleSets lists the lint rule sets of the release, such as pgwiki and
+// gitlab, in name order.
 type release struct {
 	Version  string   `json:"version"`
 	Options  []string `json:"options"`
@@ -98,7 +98,7 @@ type release struct {
 }
 
 // lintOption is listed in a release's options when the image has at least
-// one set of its standard lint rules.
+// one set of its lint rules.
 const lintOption = "lint"
 
 // releases are the pista binaries in the image, newest first.
@@ -144,7 +144,7 @@ func (r *releases) bin(version string) string {
 	return filepath.Join(r.dir, "pista-"+version)
 }
 
-// rules returns the directory of the standard lint rules of version.
+// rules returns the directory of the lint rules of version.
 func (r *releases) rules(version string) string {
 	return filepath.Join(r.rulesDir, version)
 }

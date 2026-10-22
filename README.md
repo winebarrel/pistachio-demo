@@ -20,7 +20,7 @@ that runs `pista`:
   same way.
 - `Dockerfile` puts the pista release binaries and the server into one image.
   `PISTA_VERSIONS` names the releases, newest first; each is installed as
-  `pista-<version>`. The standard lint rules of each release, from `rules/`
+  `pista-<version>`. The lint rules of each release, from `rules/`
   in the source archive of its tag, are installed in
   `/usr/local/share/pista/rules/<version>`, one subdirectory per rule
   set. The server passes the chosen set to `pista lint` with `--rules`.
@@ -115,7 +115,7 @@ slightly over it.
 ## Lint
 
 The Lint button checks current.sql and desired.sql with `pista lint` and
-the [standard rules](https://github.com/winebarrel/pistachio/tree/main/rules)
+the [lint rules of pistachio](https://github.com/winebarrel/pistachio/tree/main/rules)
 of the chosen release, unchanged. Each directory in `rules/`, such as
 `pgwiki/` and `gitlab/`, is a rule set, and lint rules in the options
 chooses the one to use. It is `pgwiki` at first. Each file is checked in a run of its own,

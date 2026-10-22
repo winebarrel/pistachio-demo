@@ -501,7 +501,7 @@
     <div class="actions">
       <button id="run" class="primary" title="Run pista diff (Ctrl+Enter / Cmd+Enter)">Run pista diff</button>
       <button id="format" title="Format both editors with pista fmt">Format</button>
-      <button id="lint" title="Check each editor with pista lint and the chosen standard rule set of pistachio">Lint</button>
+      <button id="lint" title="Check each editor with pista lint and the chosen rule set of pistachio">Lint</button>
       <button id="show-diff" title="Show the unified diff of current.sql and desired.sql">Unified diff</button>
     </div>
     <div class="actions">
@@ -984,8 +984,8 @@
 
 
 
-  // Checks each editor with pista lint and the chosen set of the standard
-  // rules in rules/ of the chosen release. A violation is shown as output, not as an error; a
+  // Checks each editor with pista lint and the chosen set of the rules in
+  // rules/ of the chosen release. A violation is shown as output, not as an error; a
   // file pista cannot read is an error, as it is for a diff.
   async function lint() {
     if (busy || !supports("lint")) return;
