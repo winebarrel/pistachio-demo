@@ -13,7 +13,7 @@
     "@cloudflare/containers": "^0.3.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.5",
+    "@biomejs/biome": "^2.6.7",
     "cf": "1.0.0-beta.27",
     "typescript": "^7.0.2",
     "wrangler": "^4.160.1"
